@@ -10,7 +10,7 @@ export function PageHeader({ eyebrow, headline, children }: { eyebrow: string; h
   return (
     <header className="mb-6 flex flex-col gap-3 md:mb-8">
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">{eyebrow}</p>
-      <h1 className="max-w-3xl text-2xl font-medium leading-tight text-foreground md:text-[2rem]">{headline}</h1>
+      <h1 className="max-w-3xl text-2xl font-medium leading-tight text-foreground md:text-[2rem] [&_.num]:font-display">{headline}</h1>
       {children}
     </header>
   );
