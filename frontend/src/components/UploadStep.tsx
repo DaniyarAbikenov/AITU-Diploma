@@ -16,10 +16,13 @@ export function UploadStep({ onDone }: { onDone: () => void }) {
   const [progress, setProgress] = useState(0);
   const [report, setReport] = useState<ImportReport | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<File | null>(null);
   const qc = useQueryClient();
-  const mut = useMutation({ mutationFn: () => api.importStatement(bank), onSuccess: (r) => { setReport(r); qc.invalidateQueries(); } });
+  const demo = useRef(false);
+  const mut = useMutation({ mutationFn: () => api.importStatement(bank, demo.current ? undefined : fileRef.current ?? undefined), onSuccess: (r) => { setReport(r); qc.invalidateQueries(); } });
 
-  function start(f: File) {
+  function start(f: File, isDemo = false) {
+    mut.reset(); fileRef.current = f; demo.current = isDemo;
     setFile(f); setProgress(5);
     const id = setInterval(() => setProgress((p) => { if (p >= 95) { clearInterval(id); mut.mutate(); return 100; } return p + 9; }), 120);
   }
@@ -28,6 +31,7 @@ export function UploadStep({ onDone }: { onDone: () => void }) {
     <section className="surface p-6 md:p-8">
       <h1 className="text-2xl text-foreground">Загрузите выписку</h1>
       <p className="mt-2 text-sm text-muted-foreground">PDF за последние 3–6 месяцев. Мы сами найдём доход, кредиты и регулярные платежи.</p>
+      {mut.isError && <p role="alert" className="mt-3 text-sm text-risk">{(mut.error as Error).message}</p>}
       <div className="mt-6 grid gap-3 md:grid-cols-2">
         <Select value={bank} onValueChange={setBank}><SelectTrigger aria-label="Банк"><SelectValue /></SelectTrigger><SelectContent>{["Kaspi Bank", "Halyk Bank", "Freedom Bank", "Jusan Bank", "Bank RBK"].map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent></Select>
         <Select defaultValue="new"><SelectTrigger aria-label="Счёт"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="new">Новый счёт</SelectItem><SelectItem value="acc-kaspi">Kaspi Gold</SelectItem><SelectItem value="acc-halyk">Halyk карта</SelectItem></SelectContent></Select>
@@ -46,7 +50,7 @@ export function UploadStep({ onDone }: { onDone: () => void }) {
               <p className="text-sm text-foreground">Перетащите PDF сюда или</p>
               <Button variant="outline" onClick={() => input.current?.click()}>Выбрать файл</Button>
               <input ref={input} type="file" accept="application/pdf" className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; if (f) start(f); }} />
-              <Button variant="link" size="sm" onClick={() => start(new File(["demo"], "kaspi_statement_demo.pdf"))}>Нет выписки под рукой? Взять демо</Button>
+              <Button variant="link" size="sm" onClick={() => start(new File(["demo"], "kaspi_statement_demo.pdf"), true)}>Нет выписки под рукой? Взять демо</Button>
             </>
           )}
         </div>
@@ -54,6 +58,7 @@ export function UploadStep({ onDone }: { onDone: () => void }) {
         <div className="mt-4 rounded-xl bg-ok-soft p-5">
           <p className="font-display text-lg text-foreground">Разобрано {report.parsed} операций</p>
           <p className="mt-1 text-sm text-foreground/80">{report.needsReview} требуют проверки категории · период {formatDate(report.period.from)} — {formatDate(report.period.to, true)}</p>
+          {report.warnings?.map((w) => <p key={w} className="mt-1 text-xs text-warn">{w}</p>)}
           <Button className="mt-4" onClick={onDone}>Дальше</Button>
         </div>
       )}
