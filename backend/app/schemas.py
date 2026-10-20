@@ -100,6 +100,7 @@ class ImportReportOut(BaseModel):
     needsReview: int
     period: dict[str, str]
     bank: str
+    warnings: list[str] = []
 
 
 class ImportJsonIn(BaseModel):

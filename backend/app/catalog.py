@@ -28,10 +28,16 @@ KEYWORDS: list[tuple[str, str]] = [
     ("yandex go", "transport"), ("onay", "transport"), ("азс", "transport"), ("helios", "transport"), ("такси", "transport"),
     ("europharma", "health"), ("аптека", "health"), ("pharm", "health"), ("клиника", "health"),
     ("kaspi магазин", "shopping"), ("wildberries", "shopping"), ("ozon", "shopping"), ("technodom", "shopping"),
+    ("avtobys", "transport"), ("lrt", "transport"), ("yandex.go", "transport"), ("самокат", "transport"),
+    ("market", "food"), ("маркет", "food"), ("minmax", "food"),
+    ("espresso", "cafe"), ("dodopizza", "cafe"), ("yandex.eda", "cafe"),
+    ("spotify", "other"), ("openai", "other"), ("anthropic", "other"), ("lovable", "other"), ("hostinger", "other"),
+    ("google*", "other"),
     ("перевод", "transfers"),
 ]
 
-SUBSCRIPTION_HINTS = ("yandex plus", "netflix", "spotify", "youtube premium", "apple", "ivi", "kinopoisk")
+SUBSCRIPTION_HINTS = ("yandex plus", "netflix", "spotify", "youtube premium", "apple", "ivi", "kinopoisk",
+                       "openai", "anthropic", "lovable", "hostinger", "google*")
 
 PRESETS: list[dict] = [
     {"id": "fx15", "name": "Тенге −15%", "description": "Импортные товары и техника дорожают",

@@ -113,15 +113,16 @@ def delete_rule(rule_id: int, u: User = Depends(current_user), db: Session = Dep
     return Ok()
 
 
-def report(b: ImportBatch) -> ImportReportOut:
+def report(b: ImportBatch, warnings: list[str] | None = None) -> ImportReportOut:
     return ImportReportOut(id=str(b.id), status=b.status, parsed=b.parsed, needsReview=b.needs_review, bank=b.bank,
-                           period={"from": (b.period_from or as_of()).isoformat(), "to": (b.period_to or as_of()).isoformat()})
+                           period={"from": (b.period_from or as_of()).isoformat(), "to": (b.period_to or as_of()).isoformat()},
+                           warnings=warnings or [])
 
 
 @router.post("/imports", response_model=ImportReportOut, status_code=201)
 async def import_statement(request: Request, u: User = Depends(current_user), db: Session = Depends(get_db)):
     """JSON {"bank": "..."} runs a synthetic demo statement through the real pipeline. multipart (fields `bank`,
-    `file`) is the real PDF path: parsers are registered per bank and Kaspi is the next slice."""
+    `file`) is the real PDF path: one parser per bank, Kaspi Gold is implemented."""
     ctype = request.headers.get("content-type", "")
     if ctype.startswith("multipart/"):
         form = await request.form()
@@ -131,15 +132,18 @@ async def import_statement(request: Request, u: User = Depends(current_user), db
         data = await file.read(MAX_UPLOAD + 1)
         if len(data) > MAX_UPLOAD:
             raise ApiError(413, "Файл больше 10 МБ")
-        parser_cls = PARSERS.get(bank.lower().split()[0] if bank else "")
+        key = bank.lower().split()[0] if bank else "kaspi"  # only Kaspi PDFs are supported so far
+        parser_cls = PARSERS.get(key)
         if parser_cls is None:
             raise ApiError(422, f"Банк «{bank}» пока не поддерживается")
         try:
             parsed = parser_cls().parse(data)
         except NotImplementedError:
             raise ApiError(501, "Разбор PDF-выписок этого банка ещё не реализован. Используйте демо-импорт (JSON).") from None
+        except ValueError as e:
+            raise ApiError(422, f"Не удалось прочитать выписку: {e}") from None
         batch = imports.import_statement(db, u, parsed, source="pdf")
-        return report(batch)
+        return report(batch, parsed.warnings)
     try:
         bank = (await request.json()).get("bank", "")
     except ValueError:
