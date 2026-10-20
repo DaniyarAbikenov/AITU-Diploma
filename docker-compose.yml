@@ -1,0 +1,23 @@
+# Local demo: docker compose up --build
+# Frontend http://localhost:8080, API docs http://localhost:8000/docs
+# Demo login: demo@zapas.kz / demo1234
+services:
+  backend:
+    build: ./backend
+    ports: ["8000:8000"]
+    environment:
+      DATABASE_URL: sqlite:///./data/app.db
+      JWT_SECRET: local-demo-secret-change-me-0123456789abcdef
+      CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+      SEED_DEMO: "1"
+      APP_AS_OF: "2026-10-20"
+    volumes: ["backend-data:/app/data"]
+  frontend:
+    build: ./frontend
+    ports: ["8080:8080"]
+    environment:
+      VITE_API_MODE: real
+      VITE_API_URL: http://localhost:8000/api/v1
+    depends_on: [backend]
+volumes:
+  backend-data:

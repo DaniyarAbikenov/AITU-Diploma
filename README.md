@@ -47,6 +47,12 @@ pytest -q
 ```
 Фронтенд подключается к бэкенду переменными `VITE_API_MODE=real` и `VITE_API_URL=http://localhost:8000/api/v1`, подробности в [frontend/README.md](frontend/README.md).
 
+## Запуск в Docker
+```bash
+docker compose up --build
+```
+Фронтенд http://localhost:8080 (вход по умолчанию `demo@zapas.kz` / `demo1234`), документация API http://localhost:8000/docs. Данные бэкенда хранятся в volume `backend-data`; сбросить сид: `docker compose down -v`.
+
 ## Структура репозитория
 ```
 backend/    исходный код сервиса и тесты
