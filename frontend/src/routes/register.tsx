@@ -20,10 +20,10 @@ const schema = z.object({ name: z.string().min(2, "Как к вам обраща
 
 function Register() {
   const navigate = useNavigate();
-  const { register, handleSubmit, formState: { errors } } = useForm({ resolver: zodResolver(schema) });
+  const { register, handleSubmit, setError, formState: { errors } } = useForm({ resolver: zodResolver(schema) });
   return (
     <AuthFrame title="Создать аккаунт">
-      <form className="space-y-4" onSubmit={handleSubmit((v) => { registerUser(v.email, v.name); navigate({ to: "/onboarding" }); })}>
+      <form className="space-y-4" onSubmit={handleSubmit(async (v) => { try { await registerUser(v.email, v.name, v.password); navigate({ to: "/onboarding" }); } catch (e) { setError("email", { message: (e as Error).message }); } })}>
         {(["name", "email", "password"] as const).map((f) => (
           <div key={f} className="space-y-1.5">
             <Label htmlFor={f}>{{ name: "Имя", email: "Email", password: "Пароль" }[f]}</Label>

@@ -20,10 +20,10 @@ const loginSchema = z.object({ email: z.string().email("Введите корр�
 
 function Login() {
   const navigate = useNavigate();
-  const { register, handleSubmit, formState: { errors } } = useForm({ resolver: zodResolver(loginSchema), defaultValues: { email: "demo@zapas.kz", password: "demo1234" } });
+  const { register, handleSubmit, setError, formState: { errors } } = useForm({ resolver: zodResolver(loginSchema), defaultValues: { email: "demo@zapas.kz", password: "demo1234" } });
   return (
     <AuthFrame title="С возвращением">
-      <form className="space-y-4" onSubmit={handleSubmit((v) => { signIn(v.email); navigate({ to: "/dashboard" }); })}>
+      <form className="space-y-4" onSubmit={handleSubmit(async (v) => { try { await signIn(v.email, v.password); navigate({ to: "/dashboard" }); } catch (e) { setError("password", { message: (e as Error).message }); } })}>
         <div className="space-y-1.5"><Label htmlFor="email">Email</Label><Input id="email" type="email" autoComplete="email" {...register("email")} aria-invalid={!!errors.email} />{errors.email && <p className="text-xs text-risk">{errors.email.message}</p>}</div>
         <div className="space-y-1.5"><Label htmlFor="password">Пароль</Label><Input id="password" type="password" autoComplete="current-password" {...register("password")} aria-invalid={!!errors.password} />{errors.password && <p className="text-xs text-risk">{errors.password.message}</p>}</div>
         <Button type="submit" className="w-full">Войти</Button>
