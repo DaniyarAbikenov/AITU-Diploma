@@ -12,7 +12,7 @@ export interface Transaction {
   merchant: string; categoryId: string; accountId: string; needsReview: boolean; internal?: boolean;
 }
 
-export interface ImportReport { id: string; status: "processing" | "done" | "failed"; parsed: number; needsReview: number; period: { from: string; to: string }; bank: string }
+export interface ImportReport { id: string; status: "processing" | "done" | "failed"; parsed: number; needsReview: number; period: { from: string; to: string }; bank: string; warnings?: string[] }
 
 export interface Forecasted { as_of: string; model_version: string }
 

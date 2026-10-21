@@ -99,3 +99,16 @@ def test_nbk_rates_parser():
     published, rates = macro_svc.parse_nbk_rates(NBK_XML)
     assert published == date(2026, 10, 20)
     assert rates["USD"] == pytest.approx(452.59) and rates["JPY"] == pytest.approx(2.901)
+
+
+def test_credit_cluster_ignores_one_off_payments_near_the_regular_amount():
+    from datetime import date
+    from types import SimpleNamespace as N
+
+    from app.services.imports import _best_cluster
+
+    def pay(m, d, amount):
+        return N(booked_on=date(2026, m, d), amount_minor=-amount * 100)
+
+    items = [pay(10, 19, 30_000), pay(10, 7, 28_562), pay(9, 7, 9_200), pay(9, 7, 28_562), pay(7, 7, 33_430), pay(6, 7, 33_430)]
+    assert sorted(t.amount_minor for t in _best_cluster(items)) == [-2_856_200, -2_856_200]

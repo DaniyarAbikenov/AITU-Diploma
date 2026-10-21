@@ -11,7 +11,7 @@ export class ApiError extends Error { constructor(public status: number, public 
 
 async function http<R>(path: string, init: RequestInit = {}): Promise<R> {
   const token = getToken();
-  const res = await fetch(BASE + path, { ...init, headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init.headers } });
+  const res = await fetch(BASE + path, { ...init, headers: { ...(init.body instanceof FormData ? {} : { "Content-Type": "application/json" }), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init.headers } });
   if (!res.ok) { const p = await res.json().catch(() => ({})); throw new ApiError(res.status, p.detail ?? p.title ?? res.statusText); }
   return res.json() as Promise<R>;
 }
@@ -36,7 +36,11 @@ export const api = {
   }, body("POST", { merchant, category: categoryId })),
   rules: () => call<T.MerchantRule[]>("/merchant-rules", () => m.db.rules),
   deleteRule: (id: string) => call("/merchant-rules/" + id, () => { m.db.rules = m.db.rules.filter((r) => r.id !== id); return { ok: true }; }, { method: "DELETE" }),
-  importStatement: (bank: string) => call<T.ImportReport>("/imports", () => m.fakeImport(bank), body("POST", { bank })),
+  importStatement: (bank: string, file?: File) => {
+    let init = body("POST", { bank });
+    if (file) { const form = new FormData(); form.append("bank", bank); form.append("file", file); init = { method: "POST", body: form }; }
+    return call<T.ImportReport>("/imports", () => m.fakeImport(bank), init);
+  },
   summary: (month: string) => call<T.DashboardSummary>(`/dashboard/summary?month=${month}`, () => m.summary(month)),
   monthEnd: () => call<T.MonthEndForecast>("/forecast/month-end", m.monthEnd),
   balance: (days: number) => call<T.BalanceForecast>(`/forecast/balance?days=${days}`, () => m.balance(days)),

@@ -132,9 +132,11 @@ def test_onboarding_import_flow(client, new_user):
     assert client.patch(f"{API}/obligations/{one['id']}", headers=new_user, json={"confirmed": True}).json()["confirmed"] is True
 
 
-def test_pdf_upload_is_not_implemented_yet(client, new_user):
-    r = client.post(f"{API}/imports", headers=new_user, data={"bank": "Kaspi"}, files={"file": ("s.pdf", b"%PDF-1.4", "application/pdf")})
-    assert r.status_code == 501
+def test_pdf_upload_errors(client, new_user):
+    broken = client.post(f"{API}/imports", headers=new_user, data={"bank": "Kaspi"}, files={"file": ("s.pdf", b"%PDF-1.4", "application/pdf")})
+    assert broken.status_code == 422
+    other = client.post(f"{API}/imports", headers=new_user, data={"bank": "Halyk Bank"}, files={"file": ("s.pdf", b"%PDF-1.4", "application/pdf")})
+    assert other.status_code == 422 and "не поддерживается" in other.json()["detail"]
 
 
 def test_delete_my_data(client, new_user):
@@ -147,3 +149,19 @@ def test_delete_my_data(client, new_user):
 @pytest.mark.parametrize("path", ["/forecast/balance?days=3", "/dashboard/summary?month=2026-13", "/dashboard/summary?month=abc"])
 def test_validation_errors(client, auth, path):
     assert client.get(API + path, headers=auth).status_code == 422
+
+
+def test_pdf_import_end_to_end(client, new_user):
+    from tests import kaspi_fixture as fx
+
+    if not fx.font_available():
+        pytest.skip("DejaVu font for the PDF fixture is not installed")
+    files = {"file": ("statement.pdf", fx.build_pdf(), "application/pdf")}
+    r = client.post(f"{API}/imports", headers=new_user, data={"bank": "Kaspi Bank"}, files=files)
+    assert r.status_code == 201, r.text
+    assert r.json()["parsed"] == 6 and r.json()["warnings"] == []
+    txs = get(client, new_user, "/transactions")
+    assert sum(t["internal"] for t in txs) == 1
+    assert next(t for t in txs if "Кредита" in t["merchant"])["categoryId"] == "credit"
+    again = client.post(f"{API}/imports", headers=new_user, data={"bank": "Kaspi Bank"}, files=files)
+    assert again.json()["parsed"] == 0  # re-importing the same statement adds nothing

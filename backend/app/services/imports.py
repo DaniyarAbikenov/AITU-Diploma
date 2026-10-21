@@ -54,7 +54,7 @@ def import_statement(db: Session, user: User, parsed: ParsedStatement, source: s
         db.add(Transaction(user_id=user.id, account_id=acc.id, batch_id=batch.id, booked_on=row.booked_on,
                            amount_minor=row.amount_minor, currency=row.currency, merchant=row.merchant,
                            category_id=cat.category_id, category_source=cat.source, needs_review=cat.needs_review,
-                           dedup_key=key))
+                           internal=row.internal, dedup_key=key))
         added += 1
         review += cat.needs_review
     batch.parsed, batch.needs_review = added, review
@@ -107,9 +107,17 @@ def detect_recurring(db: Session, user: User) -> tuple[int, int]:
     existing_ob = {o.name for o in db.scalars(select(Obligation).where(Obligation.user_id == user.id))}
     existing_in = {i.name for i in db.scalars(select(IncomeSource).where(IncomeSource.user_id == user.id))}
     new_ob = new_in = 0
+    newest = max((t.booked_on for t in txs), default=None)
     for (merchant, is_income), items in groups.items():
+        min_months = 3
+        if not is_income and items[0].category_id == "credit":
+            # Loan payments change when a loan is replaced or topped up: take the amount cluster (+-3%) that repeats
+            # in the most months, accept two months for it, but only while it is still being paid (last 45 days).
+            best = _best_cluster(items)
+            if newest and (newest - max(t.booked_on for t in best)).days <= 45:
+                items, min_months = best, 2
         months = {(t.booked_on.year, t.booked_on.month) for t in items}
-        if len(months) < 3:
+        if len(months) < min_months:
             continue
         amounts = sorted(abs(t.amount_minor) for t in items)
         median = amounts[len(amounts) // 2]
@@ -133,6 +141,14 @@ def detect_recurring(db: Session, user: User) -> tuple[int, int]:
                                   amount_minor=median, day_of_month=day, ends_at=ends, detected=True))
                 new_ob += 1
     return new_ob, new_in
+
+
+def _best_cluster(items: list[Transaction]) -> list[Transaction]:
+    def near(seed: Transaction) -> list[Transaction]:
+        return [t for t in items if abs(abs(t.amount_minor) - abs(seed.amount_minor)) <= 0.03 * abs(seed.amount_minor)]
+
+    return max((near(t) for t in items),
+               key=lambda c: (len({(t.booked_on.year, t.booked_on.month) for t in c}), max(t.booked_on for t in c)))
 
 
 def _installment_end(merchant: str) -> str | None:
