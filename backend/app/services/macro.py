@@ -102,10 +102,14 @@ def city_prices(db: Session, city: str) -> list[dict]:
 
 def parse_nbk_rates(xml_text: str) -> tuple[date, dict[str, float]]:
     """Parse https://nationalbank.kz/rss/rates_all.xml: <item><title>USD</title><pubDate>20.10.2026</pubDate>
-    <description>452.59</description><quant>1</quant>... Returns (publication date, tenge per 1 unit of currency)."""
+    <description>452.59</description><quant>1</quant>... Returns (publication date, tenge per 1 unit of currency).
+    The archive feed (get_rates.cfm?fdate=..) has no pubDate in items, its date is in <rates><date>."""
     root = ET.fromstring(xml_text)
     rates: dict[str, float] = {}
     published: date | None = None
+    if day := (root.findtext("date") or "").strip():
+        d, m, y = day.split(".")
+        published = date(int(y), int(m), int(d))
     for item in root.iter("item"):
         code = (item.findtext("title") or "").strip()
         raw = (item.findtext("description") or "").strip().replace(",", ".")

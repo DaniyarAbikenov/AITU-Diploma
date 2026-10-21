@@ -13,6 +13,9 @@ class Settings:
     ]
     seed_demo: bool = os.getenv("SEED_DEMO", "1") == "1"
     mc_paths: int = int(os.getenv("MC_PATHS", "2000"))
+    # official USD/KZT from nationalbank.kz: loaded at startup and then every NBK_RATES_INTERVAL seconds
+    nbk_rates: bool = os.getenv("NBK_RATES", "1") == "1"
+    nbk_rates_interval: int = int(os.getenv("NBK_RATES_INTERVAL", "3600"))
     model_version: str = "fc-1.0-bootstrap"
 
 
