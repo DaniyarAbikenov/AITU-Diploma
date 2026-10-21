@@ -31,12 +31,12 @@
 **Вне объёма:** платёжные операции, инвестиционные советы, интеграция напрямую с банками, обучение финансовой грамотности как основная функция.
 
 ## Технологии
-Бэкенд: Python 3.13, FastAPI, SQLAlchemy 2, SQLite (PostgreSQL через `DATABASE_URL`), numpy, pytest. Фронтенд: React, TypeScript, TanStack, ECharts (отдельный репозиторий).
+Бэкенд: Python 3.13, FastAPI, SQLAlchemy 2, SQLite (PostgreSQL через `DATABASE_URL`), numpy, pytest. Фронтенд: React, TypeScript, TanStack, ECharts (папка `frontend/`).
 
 ## Ссылки
 - YouTrack: _ссылка будет добавлена_
 - Документы: [docs/](docs)
-- Фронтенд-прототип: https://github.com/DaniyarAbikenov/diploma-demo-frontend
+- Исходный репозиторий фронтенд-прототипа (перенесён в `frontend/`): https://github.com/DaniyarAbikenov/diploma-demo-frontend
 
 ## Запуск и проверка
 Подробно в [backend/README.md](backend/README.md):
@@ -45,10 +45,12 @@ cd backend && pip install -r requirements-dev.txt && cp .env.example .env
 uvicorn app.main:app --reload   # http://localhost:8000/docs, демо: demo@zapas.kz / demo1234
 pytest -q
 ```
+Фронтенд подключается к бэкенду переменными `VITE_API_MODE=real` и `VITE_API_URL=http://localhost:8000/api/v1`, подробности в [frontend/README.md](frontend/README.md).
 
 ## Структура репозитория
 ```
 backend/    исходный код сервиса и тесты
+frontend/   веб-интерфейс (прототип, история коммитов сохранена)
 docs/       предложение проекта, исследование, требования, решения
 diagrams/   диаграммы в редактируемых исходниках (Mermaid/PlantUML)
 evaluation/ план оценки и результаты
