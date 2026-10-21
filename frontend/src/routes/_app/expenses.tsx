@@ -6,7 +6,7 @@ import { Search } from "lucide-react";
 import { api, q } from "@/api/client";
 import { AS_OF } from "@/api/mock";
 import type { Category, Transaction } from "@/api/types";
-import { Card, EmptyState, ErrorState, Loading, PageHeader } from "@/components/kit";
+import { Card, EmptyState, ErrorState, Loading, PageHeader, SourceNote } from "@/components/kit";
 import { Chart, baseAxis } from "@/components/charts";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,9 @@ function Expenses() {
 
   return (
     <>
-      <PageHeader eyebrow="Расходы · октябрь" headline={s ? <>За 19 дней октября — <span className="num">{formatMoney(s.expense)}</span>. Это {formatPercent(Math.abs(d))} {d > 0 ? "больше" : "меньше"}, чем за весь сентябрь.</> : "Загружаем расходы…"} />
+      <PageHeader eyebrow={`Расходы · ${formatMonth(MONTH)}`} headline={s ? <>За {Number(AS_OF.slice(8))} дн. месяца — <span className="num">{formatMoney(s.expense)}</span>. Это {formatPercent(Math.abs(d))} {d > 0 ? "больше" : "меньше"}, чем за весь прошлый месяц.</> : "Загружаем расходы…"}>
+        <SourceNote kind="fact" from="операции из загруженных выписок; внутренние переводы между своими счетами не считаются расходом" how="суммы по категориям складываются по операциям. Категория определяется по ключевым словам названия получателя и вашим правилам; сомнительные попадают в очередь проверки." />
+      </PageHeader>
       <Tabs defaultValue="list">
         <TabsList className="mb-4">
           <TabsTrigger value="list">Операции</TabsTrigger>
@@ -108,14 +110,14 @@ function Compare() {
   const rows = cur.data!.topCategories;
   const name = (id: string) => cats.data!.find((c) => c.id === id)?.name ?? id;
   return (
-    <Card title={`${formatMonth(MONTH)} (19 дней) против сентября`}>
+    <Card title={`${formatMonth(MONTH)} ({Number(AS_OF.slice(8))} дн.) против прошлого месяца`}>
       <Chart height={Math.max(260, rows.length * 36)} label={`Сравнение расходов по категориям: ${rows.map((r) => `${name(r.categoryId)} ${formatMoneyShort(r.amount)} против ${formatMoneyShort(r.prev)}`).join("; ")}`} option={(p) => ({
-        ...baseAxis(p), legend: { data: ["Сентябрь", "Октябрь"], textStyle: { color: p["muted-foreground"] }, top: 0 }, grid: { ...baseAxis(p).grid, top: 30 },
+        ...baseAxis(p), legend: { data: ["Прошлый месяц", "Этот месяц"], textStyle: { color: p["muted-foreground"] }, top: 0 }, grid: { ...baseAxis(p).grid, top: 30 },
         xAxis: { type: "value", splitLine: { lineStyle: { color: p.border, type: "dashed" } }, axisLabel: { formatter: (v: number) => formatMoneyShort(v).replace(" ₸", "") } },
         yAxis: { type: "category", inverse: true, data: rows.map((r) => name(r.categoryId)), axisLine: { show: false }, axisTick: { show: false } },
         series: [
-          { name: "Сентябрь", type: "bar", data: rows.map((r) => r.prev), itemStyle: { color: p.border, borderRadius: 4 }, barGap: "10%" },
-          { name: "Октябрь", type: "bar", data: rows.map((r) => r.amount), itemStyle: { color: p.primary, borderRadius: 4 } },
+          { name: "Прошлый месяц", type: "bar", data: rows.map((r) => r.prev), itemStyle: { color: p.border, borderRadius: 4 }, barGap: "10%" },
+          { name: "Этот месяц", type: "bar", data: rows.map((r) => r.amount), itemStyle: { color: p.primary, borderRadius: 4 } },
         ],
       })} />
     </Card>

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api, q } from "@/api/client";
 import type { Shock } from "@/api/types";
-import { Card, EmptyState, ErrorState, EstimateNote, Loading, PageHeader, StatusPill } from "@/components/kit";
+import { Card, EmptyState, ErrorState, EstimateNote, Loading, PageHeader, StatusPill, SourceNote } from "@/components/kit";
 import { FanChart } from "@/components/charts";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,7 @@ function Scenarios() {
     <>
       <PageHeader eyebrow="Сценарии" headline="Что будет, если… Проверьте бюджет на прочность до того, как это случится." >
         <p className="max-w-2xl text-sm text-muted-foreground">Это не предсказание, а «что если»: мы применяем шок к вашим реальным доходам и расходам и пересчитываем прогноз.</p>
+        <SourceNote kind="forecast" from="базовый прогноз по вашим выпискам плюс заданные вами шоки" how="сценарий меняет доходы или расходы в симуляции и сравнивается с базовой траекторией на 90 дней." />
       </PageHeader>
       <div className="mb-4 flex flex-wrap gap-2">
         {presets.isLoading ? <Loading rows={1} className="w-full" /> : presets.data?.map((p) => (

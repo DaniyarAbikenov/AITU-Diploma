@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, X } from "lucide-react";
 import { api, q } from "@/api/client";
 import { AS_OF } from "@/api/mock";
-import { Card, EmptyState, ErrorState, EstimateNote, Loading, PageHeader, StatusDot, StatusPill } from "@/components/kit";
+import { Card, EmptyState, ErrorState, EstimateNote, Loading, PageHeader, StatusDot, StatusPill, SourceNote } from "@/components/kit";
 import { FanChart } from "@/components/charts";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatMoney, formatPercent } from "@/lib/format";
@@ -30,8 +30,9 @@ function Dashboard() {
   const delta = f ? f.median / f.prevMonth - 1 : 0;
   return (
     <>
-      <PageHeader eyebrow={`Добрый день, ${session?.user.name ?? ""}`} headline={f ? <>К {formatDate(`${f.month}-31`)} вы потратите <span className="num whitespace-nowrap">~{formatMoney(f.median)}</span> <span className="num text-muted-foreground">(±{formatMoney((f.high - f.low) / 2)})</span>, на {formatPercent(Math.abs(delta))} {delta > 0 ? "больше" : "меньше"} сентября.</> : "Считаем прогноз…"}>
+      <PageHeader eyebrow={`Добрый день, ${session?.user.name ?? ""}`} headline={f ? <>К {formatDate(`${f.month}-31`)} вы потратите <span className="num whitespace-nowrap">~{formatMoney(f.median)}</span> <span className="num text-muted-foreground">(±{formatMoney((f.high - f.low) / 2)})</span>, на {formatPercent(Math.abs(delta))} {delta > 0 ? "больше" : "меньше"}, чем в прошлом месяце.</> : "Считаем прогноз…"}>
         {f && <EstimateNote asOf={f.as_of} model={f.model_version} />}
+        <SourceNote kind="forecast" from="операции из загруженных выписок за последние месяцы" how="Монте-Карло: модель многократно «проживает» остаток месяца, подставляя ваши прошлые траты и найденные регулярные платежи. Тёмная часть — уже потрачено, диапазон — где итог окажется в 8 случаях из 10." />
       </PageHeader>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -50,10 +51,10 @@ function Dashboard() {
                 <div><p className="text-xs text-muted-foreground">Уже потрачено</p><p className="num font-semibold text-foreground">{formatMoney(f.spentSoFar)}</p></div>
                 <div><p className="text-xs text-muted-foreground">Темп в день</p><p className="num font-semibold text-foreground">{formatMoney(f.pacePerDay)}</p></div>
                 <div><p className="text-xs text-muted-foreground">Диапазон (80%)</p><p className="num font-semibold text-foreground">{formatMoney(f.low)} – {formatMoney(f.high).replace(" ₸", "")}</p></div>
-                <div><p className="text-xs text-muted-foreground">Сентябрь, факт</p><p className="num font-semibold text-foreground">{formatMoney(f.prevMonth)}</p></div>
+                <div><p className="text-xs text-muted-foreground">Прошлый месяц, факт</p><p className="num font-semibold text-foreground">{formatMoney(f.prevMonth)}</p></div>
               </div>
               <div className="flex flex-wrap gap-2">{f.drivers.map((d) => <span key={d.label} className="rounded-full bg-secondary px-3 py-1 text-xs text-secondary-foreground">{d.label} <span className="num font-semibold">{formatMoney(d.delta, "KZT", { signed: true })}</span></span>)}</div>
-              <p className="text-xs text-muted-foreground">Тёмная полоса — уже потрачено, светлая зона — где окажется итог в 8 случаях из 10, вертикальная линия — самый вероятный итог, пунктир — сентябрь.</p>
+              <p className="text-xs text-muted-foreground">Тёмная полоса — уже потрачено, светлая зона — где окажется итог в 8 случаях из 10, вертикальная линия — самый вероятный итог, пунктир — прошлый месяц.</p>
             </div>
           )}
         </Card>

@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { q } from "@/api/client";
-import { Card, ErrorState, Loading, PageHeader, Stat, StatusPill } from "@/components/kit";
+import { Card, ErrorState, Loading, PageHeader, Stat, StatusPill, SourceNote } from "@/components/kit";
 import { Chart, baseAxis } from "@/components/charts";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,7 +32,9 @@ function Debts() {
 
   return (
     <>
-      <PageHeader eyebrow="Обязательства" headline={dti.data ? <>Кредиты и рассрочки забирают <span className="num">{formatPercent(current)}</span> вашего дохода. В апреле, после iPhone, станет ~20%.</> : "Загружаем обязательства…"} />
+      <PageHeader eyebrow="Обязательства" headline={dti.data ? <>Кредиты и рассрочки забирают <span className="num">{formatPercent(current)}</span> вашего дохода.</> : "Загружаем обязательства…"}>
+        <SourceNote kind="calc" from="регулярные платежи, найденные в выписках, и платежи, добавленные вручную" how="долговая нагрузка = платежи по кредитам и рассрочкам ÷ доход за месяц. Симулятор добавляет к ней платёж новой рассрочки." />
+      </PageHeader>
       <div className="grid gap-4 lg:grid-cols-3">
         <Card title="Платежи на 12 месяцев" className="lg:col-span-2">
           {cal.isLoading ? <Loading rows={8} /> : cal.isError ? <ErrorState onRetry={() => cal.refetch()} /> : (
