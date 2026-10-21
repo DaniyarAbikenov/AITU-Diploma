@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Trash2 } from "lucide-react";
 import { api, q } from "@/api/client";
-import { Card, EmptyState, ErrorState, Loading, PageHeader, StatusPill } from "@/components/kit";
+import { Card, EmptyState, ErrorState, Loading, PageHeader, StatusPill, SourceNote } from "@/components/kit";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,7 +37,9 @@ function Goals() {
   const first = goals.data?.[0];
   return (
     <>
-      <PageHeader eyebrow="Цели" headline={first ? <>«{first.name}»: при текущем темпе — к {formatMonth(first.projection.etaMonth)}.</> : "Ваши цели"} />
+      <PageHeader eyebrow="Цели" headline={first ? <>«{first.name}»: при текущем темпе — к {formatMonth(first.projection.etaMonth)}.</> : "Ваши цели"}>
+        <SourceNote kind="calc" from="цели, которые вы задали, и ваш текущий темп накоплений из выписок" how="срок достижения = (цель − накоплено) ÷ средний месячный взнос." />
+      </PageHeader>
       {goals.isLoading ? <Card><Loading rows={5} /></Card> : goals.isError ? <ErrorState onRetry={() => goals.refetch()} /> : (
         <div className="grid gap-4 md:grid-cols-2">
           {goals.data?.length === 0 && <div className="md:col-span-2"><EmptyState title="Целей пока нет" text="Добавьте цель — посчитаем, когда вы её достигнете и сколько откладывать." /></div>}

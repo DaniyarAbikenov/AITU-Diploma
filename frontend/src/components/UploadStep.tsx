@@ -24,7 +24,11 @@ export function UploadStep({ onDone }: { onDone: () => void }) {
   function start(f: File, isDemo = false) {
     mut.reset(); fileRef.current = f; demo.current = isDemo;
     setFile(f); setProgress(5);
-    const id = setInterval(() => setProgress((p) => { if (p >= 95) { clearInterval(id); mut.mutate(); return 100; } return p + 9; }), 120);
+    let value = 5;
+    const id = setInterval(() => {
+      value += 9;
+      if (value >= 95) { clearInterval(id); setProgress(100); mut.mutate(); } else setProgress(value);
+    }, 120);
   }
 
   return (
@@ -56,7 +60,8 @@ export function UploadStep({ onDone }: { onDone: () => void }) {
         </div>
       ) : (
         <div className="mt-4 rounded-xl bg-ok-soft p-5">
-          <p className="font-display text-lg text-foreground">Разобрано {report.parsed} операций</p>
+          <p className="font-display text-lg text-foreground">{report.parsed === 0 ? "Новых операций нет" : `Добавлено ${report.parsed} операций`}</p>
+          {report.parsed === 0 && <p className="mt-1 text-sm text-foreground/80">Выписка прочитана, но все её операции уже были загружены раньше. Если вы входили как demo@zapas.kz, зарегистрируйте своего пользователя.</p>}
           <p className="mt-1 text-sm text-foreground/80">{report.needsReview} требуют проверки категории · период {formatDate(report.period.from)} — {formatDate(report.period.to, true)}</p>
           {report.warnings?.map((w) => <p key={w} className="mt-1 text-xs text-warn">{w}</p>)}
           <Button className="mt-4" onClick={onDone}>Дальше</Button>

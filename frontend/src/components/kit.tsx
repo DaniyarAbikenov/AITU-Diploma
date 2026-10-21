@@ -87,3 +87,27 @@ export function Stat({ label, value, sub }: { label: string; value: ReactNode; s
     </div>
   );
 }
+
+const SOURCE = {
+  fact: { label: "Факт", cls: "bg-ok-soft text-ok" },
+  calc: { label: "Расчёт", cls: "bg-muted text-foreground" },
+  forecast: { label: "Прогноз", cls: "bg-warn-soft text-foreground" },
+  demo: { label: "Демо-данные", cls: "bg-risk-soft text-risk" },
+} as const;
+
+/** Where the numbers on a page come from: a kind badge and a plain-language "how it is computed" note. */
+export function SourceNote({ kind, from, how }: { kind: keyof typeof SOURCE; from: string; how: string }) {
+  const s = SOURCE[kind];
+  return (
+    <details className="group text-xs text-muted-foreground">
+      <summary className="flex cursor-pointer list-none items-center gap-2">
+        <span className={cn("rounded-full px-2 py-0.5 font-semibold", s.cls)}>{s.label}</span>
+        <span className="underline decoration-dotted underline-offset-2">Откуда цифры?</span>
+      </summary>
+      <dl className="mt-2 max-w-2xl space-y-1 rounded-lg border bg-card p-3">
+        <div><dt className="inline font-semibold text-foreground">Данные: </dt><dd className="inline">{from}</dd></div>
+        <div><dt className="inline font-semibold text-foreground">Как считается: </dt><dd className="inline">{how}</dd></div>
+      </dl>
+    </details>
+  );
+}

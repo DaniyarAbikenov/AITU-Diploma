@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { q } from "@/api/client";
-import { Card, ErrorState, EstimateNote, Loading, PageHeader, StatusPill } from "@/components/kit";
+import { Card, ErrorState, EstimateNote, Loading, PageHeader, StatusPill, SourceNote } from "@/components/kit";
 import { FanChart } from "@/components/charts";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { formatDate, formatMoney, formatPercent } from "@/lib/format";
@@ -22,6 +22,7 @@ function Forecast() {
     <>
       <PageHeader eyebrow="Прогноз" headline={!d ? "Считаем траектории баланса…" : firstRisk ? <>Самый напряжённый момент — <b className="font-medium text-risk">{formatDate(firstRisk.date)}</b>: вероятность уйти в минус около {formatPercent(firstRisk.pBelowZero)}.</> : <>В ближайшие {days} дней разрыва не ожидается.</>}>
         {d && <EstimateNote asOf={d.as_of} model={d.model_version} />}
+        <SourceNote kind="forecast" from="история баланса и трат из выписок, регулярные платежи и доходы" how="Монте-Карло: сотни случайных траекторий баланса на выбранный срок. Вероятность ниже нуля — доля траекторий, где баланс уходит в минус в этот день." />
       </PageHeader>
       <Card title="Остаток на всех счетах" aside={
         <ToggleGroup type="single" value={String(days)} onValueChange={(v) => v && setDays(Number(v))} variant="outline" size="sm" aria-label="Горизонт">

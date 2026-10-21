@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDownRight, ArrowRight, ArrowUpRight } from "lucide-react";
 import { q } from "@/api/client";
-import { Card, ErrorState, EstimateNote, Loading, PageHeader } from "@/components/kit";
+import { Card, ErrorState, EstimateNote, Loading, PageHeader, SourceNote } from "@/components/kit";
 import { Chart, Sparkline, baseAxis } from "@/components/charts";
 import { useSession } from "@/lib/auth";
 import { formatMoney, formatPercent } from "@/lib/format";
@@ -23,6 +23,7 @@ function Macro() {
     <>
       <PageHeader eyebrow="Мир и цены" headline={p ? <>Ваша личная инфляция — <span className="num">{formatPercent(p.personal, 1)}</span>, выше официальных {formatPercent(p.official, 1)}: вы больше тратите на то, что дорожает быстрее.</> : "Загружаем индикаторы…"}>
         {p && <EstimateNote asOf={p.as_of} model={p.model_version} />}
+        <SourceNote kind="demo" from="курс, инфляция и цены в этой версии заполнены вручную для демонстрации, живого источника пока нет" how="личная инфляция — средневзвешенный рост цен по вашим категориям с весами из ваших расходов." />
       </PageHeader>
       {ind.isError ? <ErrorState onRetry={() => ind.refetch()} /> : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

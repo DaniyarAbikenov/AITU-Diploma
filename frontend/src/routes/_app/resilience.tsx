@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { q } from "@/api/client";
-import { Card, ErrorState, EstimateNote, Loading, PageHeader, Stat, StatusDot, StatusPill } from "@/components/kit";
+import { Card, ErrorState, EstimateNote, Loading, PageHeader, Stat, StatusDot, StatusPill, SourceNote } from "@/components/kit";
 import { Chart } from "@/components/charts";
 import { formatMonth, formatPercent } from "@/lib/format";
 import { pageHead } from "@/lib/seo";
@@ -19,6 +19,7 @@ function ResiliencePage() {
     <>
       <PageHeader eyebrow="Устойчивость" headline={d ? <>Если доход внезапно пропадёт, денег хватит примерно на <span className="num">{String(d.runwayMonths).replace(".", ",")} месяца</span>. Главное, что стоит укрепить, — подушку.</> : "Оцениваем устойчивость…"}>
         {d && <EstimateNote asOf={d.as_of} model={d.model_version} />}
+        <SourceNote kind="calc" from="остаток, доходы, регулярные платежи и траты из выписок" how="индекс собирается из компонентов (подушка, нагрузка, разрыв, стабильность дохода), у каждого свой статус и совет. Вероятность разрыва и запас прочности берутся из симуляции Монте-Карло." />
       </PageHeader>
       {r.isLoading ? <Card><Loading rows={6} /></Card> : r.isError ? <ErrorState onRetry={() => r.refetch()} /> : d && (
         <div className="grid gap-4 lg:grid-cols-3">

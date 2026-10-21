@@ -7,17 +7,26 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export const Route = createFileRoute("/_app")({ component: AppLayout });
 
-const NAV = [
-  { to: "/dashboard", label: "Главная", icon: Home, mobile: true },
-  { to: "/expenses", label: "Расходы", icon: BarChart3, mobile: true },
-  { to: "/forecast", label: "Прогноз", icon: LineChart, mobile: true },
-  { to: "/debts", label: "Обязательства", icon: Landmark },
-  { to: "/resilience", label: "Устойчивость", icon: ShieldCheck, mobile: true },
-  { to: "/scenarios", label: "Сценарии", icon: Sparkles, mobile: true },
-  { to: "/macro", label: "Мир и цены", icon: Globe2 },
-  { to: "/goals", label: "Цели", icon: Target },
-  { to: "/settings", label: "Настройки", icon: Settings },
+const GROUPS = [
+  { title: "Данные", hint: "что есть в выписках", items: [
+    { to: "/dashboard", label: "Главная", icon: Home, mobile: true },
+    { to: "/expenses", label: "Расходы", icon: BarChart3, mobile: true },
+    { to: "/debts", label: "Обязательства", icon: Landmark },
+  ] },
+  { title: "Анализ", hint: "что мы посчитали", items: [
+    { to: "/resilience", label: "Устойчивость", icon: ShieldCheck, mobile: true },
+    { to: "/forecast", label: "Прогноз", icon: LineChart, mobile: true },
+  ] },
+  { title: "Планирование", hint: "что если", items: [
+    { to: "/scenarios", label: "Сценарии", icon: Sparkles, mobile: true },
+    { to: "/goals", label: "Цели", icon: Target },
+  ] },
+  { title: "Контекст", hint: "внешние данные", items: [
+    { to: "/macro", label: "Мир и цены", icon: Globe2 },
+  ] },
 ] as const;
+type NavItem = (typeof GROUPS)[number]["items"][number];
+const NAV: NavItem[] = GROUPS.flatMap((g) => [...g.items] as NavItem[]);
 
 function toggleTheme() {
   const dark = document.documentElement.classList.toggle("dark");
@@ -36,13 +45,20 @@ function AppLayout() {
           <span className="grid size-8 place-items-center rounded-lg bg-sidebar-primary font-display text-sm font-semibold text-sidebar-primary-foreground">З</span>
           <span className="font-display text-lg">Запас</span>
         </Link>
-        <nav className="flex flex-1 flex-col gap-0.5" aria-label="Основная навигация">
-          {NAV.map(({ to, label, icon: Icon }) => (
-            <Link key={to} to={to} className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              activeProps={{ className: "!bg-sidebar-accent !text-sidebar-accent-foreground font-semibold" }}>
-              <Icon className="size-4" aria-hidden /> {label}
-            </Link>
+        <nav className="flex flex-1 flex-col gap-4 overflow-y-auto" aria-label="Основная навигация">
+          {GROUPS.map((g) => (
+            <div key={g.title} className="flex flex-col gap-0.5">
+              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/50">{g.title} <span className="font-normal normal-case tracking-normal">· {g.hint}</span></p>
+              {g.items.map(({ to, label, icon: Icon }) => (
+                <Link key={to} to={to} className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  activeProps={{ className: "!bg-sidebar-accent !text-sidebar-accent-foreground font-semibold" }}>
+                  <Icon className="size-4" aria-hidden /> {label}
+                </Link>
+              ))}
+            </div>
           ))}
+          <Link to="/settings" className="mt-auto flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground/80 hover:bg-sidebar-accent"
+            activeProps={{ className: "!bg-sidebar-accent !text-sidebar-accent-foreground font-semibold" }}><Settings className="size-4" aria-hidden /> Настройки</Link>
         </nav>
         <div className="space-y-1 border-t border-sidebar-border pt-3 text-sm">
           {API_MODE === "mock" && <p className="px-3 pb-1 text-xs text-sidebar-foreground/60">Демо-данные</p>}
@@ -67,7 +83,7 @@ function AppLayout() {
       </main>
 
       <nav aria-label="Навигация" className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t bg-card md:hidden">
-        {NAV.filter((n) => "mobile" in n).map(({ to, label, icon: Icon }) => (
+        {NAV.filter((n) => "mobile" in n && n.mobile).map(({ to, label, icon: Icon }) => (
           <Link key={to} to={to} className="flex flex-col items-center gap-1 py-2.5 text-[11px] text-muted-foreground" activeProps={{ className: "!text-primary font-semibold" }}>
             <Icon className="size-5" aria-hidden />{label}
           </Link>
