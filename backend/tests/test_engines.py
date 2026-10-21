@@ -112,3 +112,34 @@ def test_credit_cluster_ignores_one_off_payments_near_the_regular_amount():
 
     items = [pay(10, 19, 30_000), pay(10, 7, 28_562), pay(9, 7, 9_200), pay(9, 7, 28_562), pay(7, 7, 33_430), pay(6, 7, 33_430)]
     assert sorted(t.amount_minor for t in _best_cluster(items)) == [-2_856_200, -2_856_200]
+
+
+NBK_ARCHIVE = """<?xml version="1.0" encoding="utf-8"?><rates><date>{day}</date>
+<item><title>USD</title><description>{rate}</description><quant>1</quant></item></rates>"""
+
+
+def test_nbk_refresh_replaces_demo_points(client):
+    from app.core.db import SessionLocal
+    from app.models import MacroSeries
+    from app.services import nbk
+
+    asked = []
+
+    def get(url):
+        asked.append(url)
+        if url == nbk.LATEST_URL:
+            return NBK_XML
+        day = url.rsplit("=", 1)[1]
+        return NBK_ARCHIVE.format(day=day, rate=400 + int(day[3:5]))
+
+    with SessionLocal() as db:
+        assert nbk.refresh(db, get) == pytest.approx(452.59)
+        rows = db.query(MacroSeries).filter_by(code="usdkzt").order_by(MacroSeries.as_of).all()
+        last12 = rows[-12:]
+        assert {r.source for r in last12} == {"nbk"}
+        assert (last12[-1].as_of, last12[-1].value) == (date(2026, 10, 1), pytest.approx(452.59))
+        assert (last12[-2].as_of, last12[-2].value) == (date(2026, 9, 1), pytest.approx(409))  # rate on 30.09
+        assert "fdate=30.09.2026" in asked[1] and len(asked) == 12
+        asked.clear()
+        nbk.refresh(db, get)
+        assert asked == [nbk.LATEST_URL]  # past months are fetched once

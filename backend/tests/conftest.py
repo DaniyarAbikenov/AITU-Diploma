@@ -7,6 +7,7 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
 os.environ["APP_AS_OF"] = "2026-10-20"
 os.environ["MC_PATHS"] = "600"
 os.environ["SEED_DEMO"] = "1"
+os.environ["NBK_RATES"] = "0"  # no network in tests
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
