@@ -12,7 +12,7 @@ from app.core.money import to_major
 from app.core.security import current_user
 from app.models import Account, Category, ImportBatch, MerchantRule, Transaction, User
 from app.parsers import synthetic
-from app.parsers.kaspi import PARSERS
+from app.parsers.registry import pick_parser
 from app.schemas import (
     AccountOut,
     BulkCategorizeIn,
@@ -122,7 +122,7 @@ def report(b: ImportBatch, warnings: list[str] | None = None) -> ImportReportOut
 @router.post("/imports", response_model=ImportReportOut, status_code=201)
 async def import_statement(request: Request, u: User = Depends(current_user), db: Session = Depends(get_db)):
     """JSON {"bank": "..."} runs a synthetic demo statement through the real pipeline. multipart (fields `bank`,
-    `file`) is the real PDF path: one parser per bank, Kaspi Gold is implemented."""
+    `file`) is the real PDF path: the bank is detected from the PDF (Kaspi Gold, Freedom Bank)."""
     ctype = request.headers.get("content-type", "")
     if ctype.startswith("multipart/"):
         form = await request.form()
@@ -132,12 +132,10 @@ async def import_statement(request: Request, u: User = Depends(current_user), db
         data = await file.read(MAX_UPLOAD + 1)
         if len(data) > MAX_UPLOAD:
             raise ApiError(413, "Файл больше 10 МБ")
-        key = bank.lower().split()[0] if bank else "kaspi"  # only Kaspi PDFs are supported so far
-        parser_cls = PARSERS.get(key)
-        if parser_cls is None:
-            raise ApiError(422, f"Банк «{bank}» пока не поддерживается")
         try:
-            parsed = parser_cls().parse(data)
+            parsed = pick_parser(data, bank)().parse(data)
+        except LookupError as e:
+            raise ApiError(422, str(e)) from None
         except NotImplementedError:
             raise ApiError(501, "Разбор PDF-выписок этого банка ещё не реализован. Используйте демо-импорт (JSON).") from None
         except ValueError as e:

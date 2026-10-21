@@ -136,7 +136,7 @@ def test_pdf_upload_errors(client, new_user):
     broken = client.post(f"{API}/imports", headers=new_user, data={"bank": "Kaspi"}, files={"file": ("s.pdf", b"%PDF-1.4", "application/pdf")})
     assert broken.status_code == 422
     other = client.post(f"{API}/imports", headers=new_user, data={"bank": "Halyk Bank"}, files={"file": ("s.pdf", b"%PDF-1.4", "application/pdf")})
-    assert other.status_code == 422 and "не поддерживается" in other.json()["detail"]
+    assert other.status_code == 422 and "PDF" in other.json()["detail"]
 
 
 def test_delete_my_data(client, new_user):
