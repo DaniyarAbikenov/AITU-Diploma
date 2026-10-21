@@ -2,7 +2,7 @@
 import hashlib
 from collections import Counter, defaultdict
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.catalog import SUBSCRIPTION_HINTS
@@ -24,7 +24,15 @@ def get_or_create_account(db: Session, user: User, parsed: ParsedStatement) -> A
                       balance_minor=parsed.closing_balance_minor or 0)
         db.add(acc)
         db.flush()
+    elif parsed.closing_balance_minor is not None and not _older_than_known(db, acc, parsed):
+        acc.balance_minor = parsed.closing_balance_minor  # the newest statement carries the current balance
     return acc
+
+
+def _older_than_known(db: Session, acc: Account, parsed: ParsedStatement) -> bool:
+    end = parsed.period_to or max((r.booked_on for r in parsed.rows), default=None)
+    last = db.scalar(select(func.max(Transaction.booked_on)).where(Transaction.account_id == acc.id))
+    return end is not None and last is not None and end < last
 
 
 def dedup_key(user_id: int, account_id: int, row, seq: int) -> str:
@@ -58,7 +66,9 @@ def import_statement(db: Session, user: User, parsed: ParsedStatement, source: s
         added += 1
         review += cat.needs_review
     batch.parsed, batch.needs_review = added, review
-    if dates:
+    if parsed.period_from and parsed.period_to:
+        batch.period_from, batch.period_to = parsed.period_from, parsed.period_to
+    elif dates:
         batch.period_from, batch.period_to = min(dates), max(dates)
     db.flush()
     mark_internal_transfers(db, user)

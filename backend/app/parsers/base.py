@@ -18,6 +18,8 @@ class ParsedStatement:
     account_name: str
     rows: list[ParsedRow]
     closing_balance_minor: int | None = None
+    period_from: date | None = None  # statement period from the header; None -> taken from the operation dates
+    period_to: date | None = None
     warnings: list[str] = field(default_factory=list)
 
 

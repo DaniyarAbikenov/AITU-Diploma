@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 
 from app.parsers.freedom import FreedomParser
@@ -13,6 +15,12 @@ def test_parse_rows_and_reconcile():
     assert st.rows[0].merchant == "Magnum Test"
     assert st.rows[2].merchant == "ТОО Работодатель Зарплата за август"
     assert st.warnings == []
+
+
+def test_period_and_balance_come_from_the_header():
+    st = FreedomParser().parse(fx.build_pdf())
+    assert (st.period_from, st.period_to) == (date(2026, 8, 1), date(2026, 9, 4))  # not the first/last operation
+    assert st.closing_balance_minor == 123_456
 
 
 def test_warns_when_totals_do_not_match():
