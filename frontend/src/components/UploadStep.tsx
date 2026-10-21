@@ -24,7 +24,11 @@ export function UploadStep({ onDone }: { onDone: () => void }) {
   function start(f: File, isDemo = false) {
     mut.reset(); fileRef.current = f; demo.current = isDemo;
     setFile(f); setProgress(5);
-    const id = setInterval(() => setProgress((p) => { if (p >= 95) { clearInterval(id); mut.mutate(); return 100; } return p + 9; }), 120);
+    let value = 5;
+    const id = setInterval(() => {
+      value += 9;
+      if (value >= 95) { clearInterval(id); setProgress(100); mut.mutate(); } else setProgress(value);
+    }, 120);
   }
 
   return (
