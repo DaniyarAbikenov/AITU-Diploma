@@ -2,7 +2,8 @@
 
 Columns: Дата | Сумма | Валюта | Операция | Детали. Amounts use a dot for cents and commas for thousands
 ("-1,090.00 ₸"). Long details wrap onto lines above and below the date line, so every word is assigned to the nearest
-date line. Rows are checked against the category totals of the "Краткое содержание операций" block on page 1."""
+date line. Rows are checked against the category totals of the "Краткое содержание операций" block on page 1.
+The statement period and the KZT account balance are read from the header ("за период с .. по ..", "KZ.. KZT 589.00 ₸")."""
 import io
 import re
 from datetime import date
@@ -11,6 +12,8 @@ from app.parsers.base import ParsedRow, ParsedStatement
 
 DATE_RE = re.compile(r"^\d{2}\.\d{2}\.\d{4}$")
 AMOUNT_RE = re.compile(r"^([+-])\s*([\d,]+)\.(\d{2})\s*[₸$€]?$")
+PERIOD_RE = re.compile(r"за\s+период\s+с\s+(\d{2}\.\d{2}\.\d{4})\s+по\s+(\d{2}\.\d{2}\.\d{4})")
+BALANCE_RE = re.compile(r"\bKZT\s+(-?[\d,]+)\.(\d{2})\s*₸")
 SUMMARY_RE = re.compile(r"^[А-Яа-я ]+?\s+([+-]?[\d,]+\.\d{2})\s*₸$", re.M)
 STOP_STARTS = ("Подлинность справки",)
 # x0 borders (pt) between date | amount | currency | operation | details
@@ -34,8 +37,10 @@ def parse_pages(pages_words: list[list[dict]], text: str = "") -> ParsedStatemen
     rows: list[dict] = []
     for words in pages_words:
         stop = min((w["top"] for w in words if w["text"] == "Подлинность"), default=None)
+        # an operation line has a date and a signed amount; header lines like "за период с <date> по <date>" do not
         anchors = [w for w in words if DATE_RE.match(w["text"]) and _column(w["x0"]) == "date"
-                   and any(_column(o["x0"]) == "amount" and abs(o["top"] - w["top"]) < 3 for o in words)]
+                   and any(_column(o["x0"]) == "amount" and o["text"][:1] in "+-" and abs(o["top"] - w["top"]) < 3
+                           for o in words)]
         if not anchors:
             continue
         page_rows = [{"date": a["text"], "top": a["top"], **{c: [] for c in COLUMNS if c != "date"}} for a in anchors]
@@ -59,14 +64,29 @@ def parse_pages(pages_words: list[list[dict]], text: str = "") -> ParsedStatemen
         if not m:
             warnings.append(f"{r['date']}: не удалось прочитать сумму")
             continue
-        d, mo, y = (int(x) for x in r["date"].split("."))
         details = cell("details")
         op = cell("op")
-        parsed.append(ParsedRow(booked_on=date(y, mo, d), amount_minor=_minor(*m.groups()),
+        parsed.append(ParsedRow(booked_on=_date(r["date"]), amount_minor=_minor(*m.groups()),
                                 merchant=details or op, currency=cell("currency") or "KZT"))
     st = ParsedStatement(bank="Freedom Bank", account_name=_account_name(text), rows=parsed, warnings=warnings)
+    _header(st, text)
     _reconcile(st, text)
     return st
+
+
+def _date(s: str) -> date:
+    d, mo, y = (int(x) for x in s.split("."))
+    return date(y, mo, d)
+
+
+def _header(st: ParsedStatement, text: str) -> None:
+    """Period and KZT balance on the statement date, as printed in the header (not derived from the operations)."""
+    if m := PERIOD_RE.search(text):
+        st.period_from, st.period_to = _date(m.group(1)), _date(m.group(2))
+    if m := BALANCE_RE.search(text):
+        whole, cents = m.groups()
+        value = int(whole.lstrip("-").replace(",", "")) * 100 + int(cents)
+        st.closing_balance_minor = -value if whole.startswith("-") else value
 
 
 def _account_name(text: str) -> str:

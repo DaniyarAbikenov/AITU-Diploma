@@ -122,7 +122,7 @@ def report(b: ImportBatch, warnings: list[str] | None = None) -> ImportReportOut
 @router.post("/imports", response_model=ImportReportOut, status_code=201)
 async def import_statement(request: Request, u: User = Depends(current_user), db: Session = Depends(get_db)):
     """JSON {"bank": "..."} runs a synthetic demo statement through the real pipeline. multipart (fields `bank`,
-    `file`) is the real PDF path: the bank is detected from the PDF (Kaspi Gold, Freedom Bank)."""
+    `file`) is the real PDF path: the bank is detected from the PDF (Kaspi Gold, Halyk, Freedom Bank)."""
     ctype = request.headers.get("content-type", "")
     if ctype.startswith("multipart/"):
         form = await request.form()

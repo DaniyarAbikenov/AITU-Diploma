@@ -23,7 +23,7 @@ function Macro() {
     <>
       <PageHeader eyebrow="Мир и цены" headline={p ? <>Ваша личная инфляция — <span className="num">{formatPercent(p.personal, 1)}</span>, выше официальных {formatPercent(p.official, 1)}: вы больше тратите на то, что дорожает быстрее.</> : "Загружаем индикаторы…"}>
         {p && <EstimateNote asOf={p.as_of} model={p.model_version} />}
-        <SourceNote kind="demo" from="курс, инфляция и цены в этой версии заполнены вручную для демонстрации, живого источника пока нет" how="личная инфляция — средневзвешенный рост цен по вашим категориям с весами из ваших расходов." />
+        <SourceNote kind="demo" from="курс USD/KZT — официальный курс Нацбанка РК, обновляется раз в час; инфляция и цены пока заполнены вручную для демонстрации" how="личная инфляция — средневзвешенный рост цен по вашим категориям с весами из ваших расходов." />
       </PageHeader>
       {ind.isError ? <ErrorState onRetry={() => ind.refetch()} /> : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
