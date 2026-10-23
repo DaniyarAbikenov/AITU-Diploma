@@ -34,7 +34,7 @@
 Бэкенд: Python 3.13, FastAPI, SQLAlchemy 2, SQLite (PostgreSQL через `DATABASE_URL`), numpy, pytest. Фронтенд: React, TypeScript, TanStack, ECharts (папка `frontend/`).
 
 ## Ссылки
-- YouTrack: _ссылка будет добавлена_
+- YouTrack: https://abikenov-diploma.youtrack.cloud/projects/DP
 - Документы: [docs/](docs)
 - Исходный репозиторий фронтенд-прототипа (перенесён в `frontend/`): https://github.com/DaniyarAbikenov/diploma-demo-frontend
 
