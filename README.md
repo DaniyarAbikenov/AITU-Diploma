@@ -47,6 +47,10 @@ pytest -q
 ```
 Фронтенд подключается к бэкенду переменными `VITE_API_MODE=real` и `VITE_API_URL=http://localhost:8000/api/v1`, подробности в [frontend/README.md](frontend/README.md).
 
+## Financial Life Navigator
+
+Интерактивный деморежим находится в `frontend/` по маршруту `/navigator`. Обзор, цели и переводы, операции, календарь, сценарии, задания с XP и профиль работают на общей локальной модели. Регистрация и бэкенд не требуются. [Запуск, демонстрационные сценарии и ограничения](frontend/NAVIGATOR.md).
+
 ## Запуск в Docker
 ```bash
 docker compose up --build
