@@ -46,6 +46,7 @@ function AppLayout() {
           <span className="font-display text-lg">Запас</span>
         </Link>
         <nav className="flex flex-1 flex-col gap-4 overflow-y-auto" aria-label="Основная навигация">
+          <Link to="/navigator" className="mb-2 flex items-center gap-3 rounded-lg bg-sidebar-accent px-3 py-3 text-sm"><Sparkles className="size-4" /> Life Navigator · демо</Link>
           {GROUPS.map((g) => (
             <div key={g.title} className="flex flex-col gap-0.5">
               <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/50">{g.title} <span className="font-normal normal-case tracking-normal">· {g.hint}</span></p>
