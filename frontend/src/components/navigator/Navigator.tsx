@@ -8,6 +8,8 @@ import "./navigator.css";
 const MODE_KEY = "financial-life-navigator-mode";
 
 function storedMode(): NavMode | null {
+  const fromUrl = new URLSearchParams(window.location.search).get("mode");
+  if (fromUrl === "demo" || fromUrl === "live") return fromUrl;
   try {
     const v = window.localStorage.getItem(MODE_KEY);
     return v === "demo" || v === "live" ? v : null;
