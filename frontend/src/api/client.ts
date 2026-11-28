@@ -96,6 +96,7 @@ export const api = {
   setOverride: (type: "obligation" | "planned", id: string, month: string, amount: number | null) =>
     call(`/overrides/${type}/${id}/${month}`, () => ({ ok: true }), body("PUT", { amount })),
   moneyPlan: () => call<T.MoneyPlan>("/money-plan", m.moneyPlan),
+  planBasis: (month?: string) => call<T.PlanBasis>("/profile/basis" + (month ? "?month=" + month : ""), () => m.planBasis(month)),
   addNeed: (n: T.DailyNeedIn) => call("/daily-needs", () => m.addNeed(n), body("POST", n)),
   updateNeed: (id: string, n: T.DailyNeedIn) => call("/daily-needs/" + id, () => Object.assign(m.db.needs.find((x) => x.id === id)!, n), body("PUT", n)),
   deleteNeed: (id: string) => call("/daily-needs/" + id, () => { m.db.needs = m.db.needs.filter((x) => x.id !== id); return { ok: true }; }, { method: "DELETE" }),
@@ -170,6 +171,7 @@ export const q = {
   transferCandidates: queryOptions({ queryKey: ["transactions", "candidates"], queryFn: api.transferCandidates }),
   ruleVariables: queryOptions({ queryKey: ["ruleVariables"], queryFn: api.ruleVariables, staleTime: Infinity }),
   dtiPayments: (month: string) => queryOptions({ queryKey: ["dti", "payments", month], queryFn: () => api.dtiPayments(month) }),
+  planBasis: (month?: string) => queryOptions({ queryKey: ["moneyPlan", "basis", month ?? ""], queryFn: () => api.planBasis(month) }),
   moneyPlan: queryOptions({ queryKey: ["moneyPlan"], queryFn: api.moneyPlan }),
   allocationRules: queryOptions({ queryKey: ["moneyPlan", "rules"], queryFn: api.allocationRules }),
   incomeAllocations: queryOptions({ queryKey: ["moneyPlan", "income"], queryFn: api.incomeAllocations }),

@@ -12,11 +12,12 @@ import type {
 import { updateSession } from "@/lib/auth";
 import { bankName, ru } from "@/i18n/ru";
 import { formatDate } from "@/lib/format";
-import { cautiousIncome, formatDay } from "@/lib/navigator-live";
+import { formatDay } from "@/lib/navigator-live";
 import { money, moneyIn } from "../model";
 import { Panel } from "../shared";
 import { KztHint, Missing } from "./common";
 import { ObligationsPanel } from "./LivePayments";
+import { PlanBasisPanel } from "./PlanBasis";
 import { NeedsPanel, PayoutRulesPanel } from "./MoneyPlan";
 import { PrivacyPanel } from "./PrivacyPanel";
 import { InsightSettingsPanel } from "./InsightSettingsPanel";
@@ -39,7 +40,7 @@ const ZONES = [
 const opt = (v: FormDataEntryValue | null) =>
   v === null || String(v).trim() === "" ? null : Number(v);
 
-export function LiveProfile({ me, accounts, incomes, obligations, today, notify }: LiveProps) {
+export function LiveProfile({ me, accounts, obligations, today, notify, go }: LiveProps) {
   const qc = useQueryClient();
   const saveMe = useMutation({
     mutationFn: (p: ProfilePatch) => api.updateMe(p),
@@ -49,7 +50,6 @@ export function LiveProfile({ me, accounts, incomes, obligations, today, notify 
       notify(t.saved);
     },
   });
-  const cautious = cautiousIncome(incomes);
   const hourly = me.plannedIncome != null && me.workHours ? me.plannedIncome / me.workHours : null;
   return (
     <>
@@ -64,8 +64,6 @@ export function LiveProfile({ me, accounts, incomes, obligations, today, notify 
                 name: String(f.get("name")).trim(),
                 city: String(f.get("city")).trim(),
                 timezone: String(f.get("timezone")),
-                plannedIncome: opt(f.get("income")),
-                essentialExpenses: opt(f.get("expenses")),
                 workHours: opt(f.get("hours")),
               });
             }}
@@ -85,33 +83,6 @@ export function LiveProfile({ me, accounts, incomes, obligations, today, notify 
                   <option key={z}>{z}</option>
                 ))}
               </select>
-            </label>
-            <label className="nav-field">
-              {t.income}
-              <input
-                name="income"
-                type="number"
-                min={0}
-                step={1}
-                placeholder={ru.common.unknown}
-                defaultValue={me.plannedIncome ?? ""}
-              />
-            </label>
-            {cautious > 0 && (
-              <p className="nav-small">
-                По подтверждённым выплатам (по нижней границе): {money(cautious)} в месяц.
-              </p>
-            )}
-            <label className="nav-field">
-              {t.expenses}
-              <input
-                name="expenses"
-                type="number"
-                min={0}
-                step={1}
-                placeholder={ru.common.unknown}
-                defaultValue={me.essentialExpenses ?? ""}
-              />
             </label>
             <label className="nav-field">
               {t.hours}
@@ -155,6 +126,7 @@ export function LiveProfile({ me, accounts, incomes, obligations, today, notify 
           )}
         </Panel>
       </div>
+      <PlanBasisPanel today={today} notify={notify} go={go} />
       <Panel title={t.accountsTitle}>
         <p className="nav-small">{t.accountsHint}</p>
         {accounts.length ? (

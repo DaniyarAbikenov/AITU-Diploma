@@ -41,6 +41,8 @@ beforeEach(() => {
   vi.stubGlobal("confirm", () => true);
   signOut();
   db.needs = [];
+  db.me.essentialExpenses = null;
+  db.me.plannedIncome = null;
   db.setAside = null;
   db.allocationRules = [];
   db.incomeAllocations = { proposals: [], confirmed: [] };
@@ -140,5 +142,41 @@ describe("needs and rules in the profile", () => {
     await waitFor(() =>
       expect(db.allocationRules).toMatchObject([{ kind: "tax", mode: "percent", value: 3 }]),
     );
+  });
+});
+
+describe("essential expenses are computed", () => {
+  const block = async () =>
+    within(await screen.findByRole("region", { name: "Обязательные расходы в месяц" }));
+  it("shows the items, takes a manual value as an override and returns to the automatic one", async () => {
+    db.needs = [
+      {
+        id: "n1",
+        name: "Питание",
+        amount: 5_000,
+        period: "day",
+        coveredBy: null,
+        skipped: false,
+        perDay: 5_000,
+        perMonth: 155_000,
+      },
+    ];
+    await open("Профиль");
+    const b = await block();
+    expect(b.getByText(/рассчитано автоматически/)).toBeInTheDocument();
+    expect(b.getByText(/5\s000 ₸ × (28|29|30|31) дн\./)).toBeInTheDocument();
+    fireEvent.click(b.getByRole("button", { name: "Указать вручную" }));
+    fireEvent.change(b.getByLabelText(/вручную/), { target: { value: "400000" } });
+    fireEvent.click(b.getByRole("button", { name: "Сохранить" }));
+    await waitFor(() => expect(db.me.essentialExpenses).toBe(400_000));
+    fireEvent.click(await b.findByRole("button", { name: "Вернуть автоматический расчёт" }));
+    await waitFor(() => expect(db.me.essentialExpenses).toBeNull());
+  });
+  it("says that only payments are known instead of passing a partial sum off as the whole", async () => {
+    db.obligations[0].confirmed = true;
+    await open("Профиль");
+    const b = await block();
+    expect(b.getByText(/Учтены только платежи/)).toBeInTheDocument();
+    expect(b.getByText(/посчитана только часть/)).toBeInTheDocument();
   });
 });

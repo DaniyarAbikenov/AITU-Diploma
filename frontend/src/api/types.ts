@@ -157,11 +157,22 @@ export type DailyNeedIn = Pick<DailyNeed, "name" | "amount" | "period"> & { cove
 export interface MoneyPlan {
   asOf: string; liquid: number | null; liquidForeign: number; protected: number;
   plan: { days: number; until: string; horizon: "income" | "month-end"; committed: number; needs: number; safeDaily: number; deficit: number } | null;
-  needs: DailyNeed[]; needToday: number | null; suggestedDaily: number | null;
+  needs: DailyNeed[]; needToday: number | null; suggestedDaily: number | null; everydayKnown: boolean;
   setAside: { amount: number | null; free: number | null; missing: ("accounts" | "needs" | "income")[]; items: SplitItem[]; days: number; hasTargets: boolean };
 }
 export interface AllocationRule { name: string; kind: "tax" | "reserve" | "goals"; mode: "percent" | "fixed"; value: number }
 export interface IncomeAllocations {
   proposals: { transactionId: string; date: string; name: string; amount: number; items: SplitItem[]; left: number }[];
   confirmed: { transactionId: string; items: SplitItem[] }[];
+}
+
+/** auto = computed; manual = the user's override; fallback = typed value used until it can be computed;
+ * partial = only payments are known, not used in calculations. */
+export type BasisSource = "auto" | "manual" | "fallback" | "partial" | "none";
+export interface PlanBasis {
+  month: string; days: number; asOf: string;
+  essential: { value: number | null; auto: number | null; source: BasisSource; everydayKnown: boolean; manual: number | null; manualOn: string | null;
+    items: { type: "payment" | "planned" | "need"; name: string; amount: number; note: string; perDay: number | null; days: number | null }[] };
+  income: { value: number | null; auto: number | null; low: number | null; high: number | null; source: BasisSource; manual: number | null; manualOn: string | null;
+    items: { name: string; amount: number; day: number }[] };
 }

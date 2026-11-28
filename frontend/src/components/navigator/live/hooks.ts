@@ -17,6 +17,7 @@ const MONEY_KEYS = [
   "calendar",
   "moneyPlan",
   "goals",
+  "me",
 ];
 
 export function useWrite<A, R>(fn: (a: A) => Promise<R>, onDone: (r: R) => void) {

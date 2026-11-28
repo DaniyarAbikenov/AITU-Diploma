@@ -2,7 +2,7 @@
 import type {
   Account, BalancePoint, Category, CityPrice, DashboardSummary, DtiPoint, Goal, GoalProjection, ImportReport, IncomeSource,
   Insight, MacroIndicator, MerchantRule, MonthEndForecast, BalanceForecast, Obligation, ObligationsCalendar, PersonalInflation,
-  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction, User, AccountIn, TxKind, TxQuery, Decision, ImportPreview, SmartCard, InsightSettings, DailyNeed, DailyNeedIn, MoneyPlan, AllocationRule, IncomeAllocations, RuleIn, RuleInfo, RulePreview, Rates, TransactionIn, TransferIn, TransactionPatch, PlannedPayment, PlannedIn, PlannedPatch, SettleIn,
+  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction, User, AccountIn, TxKind, TxQuery, Decision, ImportPreview, SmartCard, InsightSettings, DailyNeed, DailyNeedIn, MoneyPlan, AllocationRule, IncomeAllocations, PlanBasis, RuleIn, RuleInfo, RulePreview, Rates, TransactionIn, TransferIn, TransactionPatch, PlannedPayment, PlannedIn, PlannedPatch, SettleIn,
 } from "./types";
 import { liveSnapshot } from "@/lib/navigator-live";
 
@@ -427,7 +427,30 @@ export function moneyPlan(): MoneyPlan {
     asOf: AS_OF, liquid: s.liquid, liquidForeign: 0, protected: 0,
     plan: s.sts && { days: s.sts.days, until: s.sts.until, horizon: s.sts.horizon, committed: s.sts.committed, needs: perDay * s.sts.days,
       safeDaily: Math.max(0, Math.floor(s.sts.safeDaily - perDay)), deficit: s.sts.deficit },
-    needs: db.needs.map((n) => ({ ...n, perDay: n.period === "day" ? n.amount : Math.round(n.amount / 31), perMonth: n.period === "day" ? n.amount * 31 : n.amount })), needToday: db.needs.length ? perDay : null, suggestedDaily: 8_000,
+    needs: db.needs.map((n) => ({ ...n, perDay: n.period === "day" ? n.amount : Math.round(n.amount / 31), perMonth: n.period === "day" ? n.amount * 31 : n.amount })), needToday: db.needs.length ? perDay : null, suggestedDaily: 8_000, everydayKnown: db.needs.length > 0,
     setAside: db.setAside ?? { amount: null, free: null, missing: ["needs", "income"], items: [], days: 35, hasTargets: true },
+  };
+}
+
+/** Mock of GET /profile/basis (payments and needs only: the server has the full rules). */
+export function planBasis(month = AS_OF.slice(0, 7)): PlanBasis {
+  const days = new Date(Number(month.slice(0, 4)), Number(month.slice(5)), 0).getDate();
+  const items: PlanBasis["essential"]["items"] = [
+    ...db.obligations.filter((o) => o.confirmed && !o.rejected).map((o) => ({ type: "payment" as const, name: o.name, amount: o.amount, note: "в месяц", perDay: null, days: null })),
+    ...db.needs.map((n) => ({ type: "need" as const, name: n.name, amount: n.period === "day" ? n.amount * days : n.amount, note: "в месяц",
+      perDay: n.period === "day" ? n.amount : null, days: n.period === "day" ? days : null })),
+  ];
+  const auto = items.length ? items.reduce((a, x) => a + x.amount, 0) : null;
+  const full = db.needs.length > 0, manual = db.me.essentialExpenses ?? null;
+  const inc = db.income.filter((i) => i.confirmed && !i.rejected);
+  const sum = (f: (i: (typeof inc)[number]) => number) => (inc.length ? inc.reduce((a, i) => a + f(i), 0) : null);
+  const mi = db.me.plannedIncome ?? null;
+  return {
+    month, days, asOf: AS_OF,
+    essential: { value: manual ?? (full ? auto : null), auto, source: manual !== null ? (full ? "manual" : "fallback") : full ? "auto" : auto !== null ? "partial" : "none",
+      everydayKnown: full, manual, manualOn: manual !== null ? AS_OF : null, items },
+    income: { value: mi ?? sum((i) => i.amount), auto: sum((i) => i.amount), low: sum((i) => i.amountMin ?? i.amount), high: sum((i) => i.amountMax ?? i.amount),
+      source: mi !== null ? (inc.length ? "manual" : "fallback") : inc.length ? "auto" : "none", manual: mi, manualOn: mi !== null ? AS_OF : null,
+      items: inc.map((i) => ({ name: i.name, amount: i.amount, day: i.dayOfMonth })) },
   };
 }

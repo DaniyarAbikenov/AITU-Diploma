@@ -46,7 +46,7 @@ export function SpendingLimit({ snap, go }: LiveProps) {
         <>
           <p className="nav-safe-amount">{money(p.safeDaily)}</p>
           <p>{h.safeUntil(formatDay(p.until))}</p>
-          {hasNeeds ? (
+          {data.everydayKnown ? (
             <p className="nav-small">{h.ceilingNote}</p>
           ) : (
             <Missing action={t.addNeeds} onAction={() => go("profile")}>
