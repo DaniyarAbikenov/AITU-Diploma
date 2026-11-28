@@ -10,6 +10,8 @@ const MONEY_KEYS = [
   "resilience",
   "balance",
   "txHistory",
+  "dti",
+  "calendar",
 ];
 
 export function useWrite<A, R>(fn: (a: A) => Promise<R>, onDone: (r: R) => void) {

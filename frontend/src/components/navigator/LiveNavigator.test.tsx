@@ -129,4 +129,26 @@ describe("Navigator modes (FR-01)", () => {
     ).toBeInTheDocument();
     window.history.pushState({}, "", "/");
   });
+  it("shows no debt-to-income percentage for a month without usable income", async () => {
+    db.dti = [
+      { month: "2026-08", dti: 0.1, debt: 40_000, income: 400_000, status: "ok", payments: 1 },
+      {
+        month: "2026-09",
+        dti: null,
+        debt: 37_800,
+        income: 3_000,
+        expectedIncome: 400_000,
+        status: "incomplete_income",
+        payments: 1,
+      },
+    ];
+    window.history.pushState({}, "", "/navigator?tab=debts");
+    await signIn();
+    show();
+    expect(await screen.findByText(/доход в выписках .* намного меньше/)).toBeInTheDocument();
+    expect(screen.queryByText(/1259/)).toBeNull();
+    expect(screen.getByText(/платежи 37 800 ₸ ÷ доход 3 000 ₸/)).toBeInTheDocument();
+    window.history.pushState({}, "", "/");
+    db.dti = null;
+  });
 });

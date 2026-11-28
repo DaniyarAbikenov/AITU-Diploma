@@ -1,18 +1,62 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { q } from "@/api/client";
+import { api, q } from "@/api/client";
 import { Chart, baseAxis } from "@/components/charts";
 import { ru } from "@/i18n/ru";
 import { dtiStatus, monthlyPayment } from "@/lib/finance";
 import { formatPercent } from "@/lib/format";
-import { cautiousIncome, formatMonth } from "@/lib/navigator-live";
+import { cautiousIncome, formatDay, formatMonth } from "@/lib/navigator-live";
 import { compact, money } from "../model";
 import { Panel } from "../shared";
 import { Missing } from "./common";
 import { ObligationsPanel } from "./LivePayments";
+import { FormError } from "./forms";
+import { useWrite } from "./hooks";
 import type { LiveProps } from "./types";
 
 const t = ru.debts;
+
+const pill = (s: string) => (s === "ok" ? "ok" : s === "warn" ? "warn" : "off");
+
+/** Operations counted as debt payments in a month; a wrong one can be re-typed right here. */
+function DtiPayments({
+  month,
+  count,
+  notify,
+}: {
+  month: string;
+  count: number;
+  notify: (m: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const list = useQuery({ ...q.dtiPayments(month), enabled: open });
+  const fix = useWrite(
+    (id: string) => api.recategorize(id, "other"),
+    () => notify(ru.crud.saved),
+  );
+  if (!count) return null;
+  return (
+    <details className="nav-small" onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+      <summary>{t.dtiPayments(count)}</summary>
+      {(list.data ?? []).map((x) => (
+        <div className="nav-live-row" key={x.id}>
+          <div>
+            {formatDay(x.date)} · {x.merchant}
+          </div>
+          <strong>{money(x.amount)}</strong>
+          <button
+            className="nav-text-button"
+            disabled={fix.isPending}
+            onClick={() => fix.mutate(x.id)}
+          >
+            {t.notDebt}
+          </button>
+        </div>
+      ))}
+      <FormError error={fix.error} />
+    </details>
+  );
+}
 
 /** Debts: 12-month payment calendar, debt-to-income, installment simulator and the obligations list. */
 export function LiveDebts({ obligations, incomes, notify }: LiveProps) {
@@ -20,7 +64,8 @@ export function LiveDebts({ obligations, incomes, notify }: LiveProps) {
   const dti = useQuery(q.dti);
   const [sim, setSim] = useState<{ pay: number; months: number; price: number } | null>(null);
   const income = cautiousIncome(incomes);
-  const current = dti.data?.at(-1)?.dti ?? null;
+  const last = dti.data?.at(-1);
+  const current = last?.dti ?? null;
   const newDti = current !== null && sim && income > 0 ? current + sim.pay / income : current;
   const credits = obligations.filter(
     (o) => !o.rejected && (o.kind === "credit" || o.kind === "installment"),
@@ -94,21 +139,41 @@ export function LiveDebts({ obligations, incomes, notify }: LiveProps) {
         <Panel title={t.dtiTitle}>
           {dti.isPending ? (
             <p className="nav-small">{ru.common.loading}</p>
-          ) : current === null ? (
+          ) : !last ? (
             <Missing>{t.dtiEmpty}</Missing>
           ) : (
             <>
-              <p className="nav-large">
-                {formatPercent(current)}{" "}
-                <span
-                  className={`nav-pill ${dtiStatus(current) === "ok" ? "ok" : dtiStatus(current) === "warn" ? "warn" : "off"}`}
-                >
-                  {t.dtiStatus[dtiStatus(current)]}
-                </span>
+              {last.dti != null ? (
+                <p className="nav-large">
+                  {formatPercent(last.dti)}{" "}
+                  <span className={`nav-pill ${pill(dtiStatus(last.dti))}`}>
+                    {t.dtiStatus[dtiStatus(last.dti)]}
+                  </span>{" "}
+                  {last.status === "check" && <span className="nav-pill warn">{t.dtiCheck}</span>}
+                </p>
+              ) : (
+                <Missing>
+                  {last.status === "incomplete_income"
+                    ? t.dtiIncomplete(
+                        formatMonth(last.month),
+                        money(last.income ?? 0),
+                        money(last.expectedIncome ?? 0),
+                      )
+                    : t.dtiNoIncome(formatMonth(last.month))}
+                </Missing>
+              )}
+              <p className="nav-small">
+                {t.dtiBreakdown(
+                  formatMonth(last.month),
+                  money(last.debt ?? 0),
+                  money(last.income ?? 0),
+                )}
               </p>
+              {last.status === "check" && <p className="nav-warning">{t.dtiCheckHint}</p>}
+              <DtiPayments month={last.month} count={last.payments ?? 0} notify={notify} />
               <Chart
                 height={140}
-                label={`${t.dtiTitle}: ${dti.data!.map((d) => formatPercent(d.dti)).join(", ")}`}
+                label={`${t.dtiTitle}: ${dti.data!.map((d) => (d.dti == null ? "—" : formatPercent(d.dti))).join(", ")}`}
                 option={(p) => ({
                   grid: { left: 0, right: 0, top: 10, bottom: 18 },
                   xAxis: {
@@ -122,9 +187,11 @@ export function LiveDebts({ obligations, incomes, notify }: LiveProps) {
                     {
                       type: "line",
                       data: dti.data!.map((d) => d.dti),
-                      smooth: true,
-                      symbol: "none",
+                      connectNulls: false,
+                      symbol: "circle",
+                      symbolSize: 5,
                       lineStyle: { color: p.primary, width: 2 },
+                      itemStyle: { color: p.primary },
                       markLine: {
                         silent: true,
                         symbol: "none",
@@ -136,6 +203,7 @@ export function LiveDebts({ obligations, incomes, notify }: LiveProps) {
                   ],
                 })}
               />
+              <p className="nav-small">{t.dtiGaps}</p>
             </>
           )}
           <p className="nav-small">{t.dtiHint}</p>

@@ -88,6 +88,7 @@ export const db = {
   scenarios: [] as SavedScenario[],
   dismissed: new Set<string>(),
   planned: [] as PlannedPayment[],
+  dti: null as DtiPoint[] | null,
   me: { id: "u1", email: "mock@example.com", name: "Айгерим", city: "Алматы", currency: "KZT", timezone: "Asia/Almaty", plannedIncome: null, essentialExpenses: null, workHours: null } as User,
 };
 
@@ -210,6 +211,7 @@ export function calendar(): ObligationsCalendar {
   return { months, income: 800_000 };
 }
 export function dtiHistory(): DtiPoint[] {
+  if (db.dti) return db.dti;
   const vals = [0.12, 0.13, 0.13, 0.19, 0.2, 0.21, 0.25, 0.26, 0.24, 0.25, 0.27, 0.268];
   return vals.map((dti, i) => ({ month: iso(new Date(Date.UTC(2025, 10 + i, 1))).slice(0, 7), dti }));
 }

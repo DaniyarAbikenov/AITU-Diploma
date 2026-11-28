@@ -101,7 +101,12 @@ export interface Obligation { rule?: RuleInfo | null; id: string; name: string; 
 export type ObligationIn = Pick<Obligation, "name" | "kind" | "amount" | "dayOfMonth"> & { endsAt?: string | null; category?: string | null; debtLeft?: number | null };
 export type Decision = { confirmed?: boolean; rejected?: boolean };
 export interface ObligationsCalendar { months: { month: string; credit: number; installment: number; regular: number }[]; income: number }
-export interface DtiPoint { month: string; dti: number }
+/** dti is null when the month has no usable income (no income, or far below the confirmed expected one). */
+export interface DtiPoint {
+  month: string; dti: number | null; debt?: number; income?: number; expectedIncome?: number | null;
+  incomeSource?: "operations"; status?: "ok" | "no_income" | "incomplete_income" | "check"; payments?: number;
+}
+export interface DtiPayment { id: string; date: string; merchant: string; amount: number }
 
 export interface IncomeSource {
   id: string; name: string; amount: number; dayOfMonth: number; confirmed: boolean; rejected?: boolean;

@@ -103,6 +103,7 @@ export const api = {
   decideObligation: (id: string, d: T.Decision) => call<T.Obligation>("/obligations/" + id, () => m.decide(m.db.obligations, id, d), body("PATCH", d)),
   calendar: () => call<T.ObligationsCalendar>("/obligations/calendar?months=12", m.calendar),
   dti: () => call<T.DtiPoint[]>("/obligations/dti-history", m.dtiHistory),
+  dtiPayments: (month: string) => call<T.DtiPayment[]>(`/obligations/dti-payments?month=${month}`, () => []),
   income: () => call<T.IncomeSource[]>("/income-sources", () => m.db.income),
   decideIncome: (id: string, d: T.Decision) => call<T.IncomeSource>("/income-sources/" + id, () => m.decide(m.db.income, id, d), body("PATCH", d)),
   addIncome: (i: T.IncomeIn) => call<T.IncomeSource>("/income-sources", () => { const n = { ...i, id: "i" + Date.now(), confirmed: true, rejected: false }; m.db.income.push(n); return n; }, body("POST", i)),
@@ -153,6 +154,7 @@ export const q = {
   goals: queryOptions({ queryKey: ["goals"], queryFn: api.goals }),
   transferCandidates: queryOptions({ queryKey: ["transactions", "candidates"], queryFn: api.transferCandidates }),
   ruleVariables: queryOptions({ queryKey: ["ruleVariables"], queryFn: api.ruleVariables, staleTime: Infinity }),
+  dtiPayments: (month: string) => queryOptions({ queryKey: ["dti", "payments", month], queryFn: () => api.dtiPayments(month) }),
   planned: queryOptions({ queryKey: ["planned"], queryFn: api.planned }),
   txHistory: (id: string) => queryOptions({ queryKey: ["txHistory", id], queryFn: () => api.txHistory(id) }),
 };
