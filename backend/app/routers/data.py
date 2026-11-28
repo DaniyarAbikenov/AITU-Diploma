@@ -32,8 +32,11 @@ from app.schemas import (
     CategoryOut,
     CheckpointIn,
     CheckpointOut,
+    ImportAccountOption,
+    ImportPreviewOut,
     ImportReportOut,
     MerchantRuleOut,
+    MoveOperationsIn,
     Ok,
     RecategorizeIn,
     TransactionEditOut,
@@ -363,39 +366,94 @@ def delete_rule(rule_id: int, u: User = Depends(current_user), db: Session = Dep
     return Ok()
 
 
-def report(b: ImportBatch, warnings: list[str] | None = None) -> ImportReportOut:
+def report(b: ImportBatch, warnings: list[str] | None = None, db: Session | None = None) -> ImportReportOut:
+    acc = db.get(Account, b.account_id) if db is not None and b.account_id else None
     return ImportReportOut(id=str(b.id), status=b.status, parsed=b.parsed, needsReview=b.needs_review, bank=b.bank,
                            period={"from": (b.period_from or as_of()).isoformat(), "to": (b.period_to or as_of()).isoformat()},
-                           warnings=warnings or [])
+                           warnings=warnings or [], accountId=str(acc.id) if acc else None,
+                           accountName=acc.name if acc else None)
+
+
+async def _parse_upload(request: Request):
+    form = await request.form()
+    bank, file = str(form.get("bank", "")), form.get("file")
+    if not isinstance(file, UploadFile):
+        raise ApiError(422, "Приложите файл выписки в поле file")
+    data = await file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        raise ApiError(413, "Файл больше 10 МБ")
+    try:
+        return pick_parser(data, bank)().parse(data), form
+    except LookupError as e:
+        raise ApiError(422, str(e)) from None
+    except NotImplementedError:
+        raise ApiError(501, "Разбор PDF-выписок этого банка ещё не реализован. Используйте демо-импорт (JSON).") from None
+    except ValueError as e:
+        raise ApiError(422, f"Не удалось прочитать выписку: {e}") from None
+
+
+@router.post("/imports/preview", response_model=ImportPreviewOut)
+async def preview_import(request: Request, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Parse a PDF without saving anything: which bank and account (number mask from the header), how many operations,
+    and which of the user's accounts it would go to. The user confirms or picks another account before importing."""
+    parsed, _ = await _parse_upload(request)
+    acc, how = imports.match_account(db, u, parsed)
+    own = db.scalars(select(Account).where(Account.user_id == u.id).order_by(Account.id)).all()
+    dates = [r.booked_on for r in parsed.rows]
+    return ImportPreviewOut(
+        bank=parsed.bank, accountName=parsed.account_name, numberMask=parsed.account_mask,
+        currency=imports.statement_currency(parsed),
+        periodFrom=(parsed.period_from or (min(dates) if dates else None) or as_of()).isoformat(),
+        periodTo=(parsed.period_to or (max(dates) if dates else None) or as_of()).isoformat(),
+        operations=len(parsed.rows),
+        closingBalance=None if parsed.closing_balance_minor is None else to_major(parsed.closing_balance_minor),
+        suggestedAccountId=str(acc.id) if acc else None, matchedBy=how, needsChoice=how != "number",
+        accounts=[ImportAccountOption(id=str(a.id), bank=a.bank, name=a.name, currency=a.currency,
+                                      numberMask=a.number_mask) for a in own],
+        warnings=parsed.warnings)
+
+
+@router.post("/accounts/{account_id}/move-operations", response_model=Ok)
+def move_operations(account_id: int, body: MoveOperationsIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Move every operation, import record and statement link of one account to another of the user's accounts
+    (for a statement that went to the wrong account). Balances on dates (checkpoints) stay with the old account."""
+    src = _own_account(db, u, account_id)
+    dst = _own_account(db, u, int(body.targetAccountId)) if body.targetAccountId.isdigit() else None
+    if dst is None:
+        raise ApiError(404, "Счёт не найден")
+    if dst.id == src.id:
+        raise ApiError(422, "Выберите другой счёт")
+    for t in db.scalars(select(Transaction).where(Transaction.user_id == u.id, Transaction.account_id == src.id)):
+        before = _snapshot(t)
+        t.account_id = dst.id
+        db.flush()
+        _audit(db, t, "update", before)
+    for b in db.scalars(select(ImportBatch).where(ImportBatch.user_id == u.id, ImportBatch.account_id == src.id)):
+        b.account_id = dst.id
+    if src.statement_key and dst.statement_key is None:
+        dst.statement_key, dst.number_mask = src.statement_key, src.number_mask
+        src.statement_key, src.number_mask = None, None
+    db.commit()
+    return Ok()
 
 
 @router.post("/imports", response_model=ImportReportOut, status_code=201)
 async def import_statement(request: Request, u: User = Depends(current_user), db: Session = Depends(get_db)):
     """JSON {"bank": "..."} runs a synthetic demo statement through the real pipeline. multipart (fields `bank`,
-    `file`) is the real PDF path: the bank is detected from the PDF (Kaspi Gold, Halyk, Freedom Bank)."""
+    `file`, optional `accountId` = "auto" | "new" | an account id) is the real PDF path: the bank is detected from the
+    PDF (Kaspi Gold, Halyk, Freedom Bank); the account is the one the user confirmed in the preview."""
     ctype = request.headers.get("content-type", "")
     if ctype.startswith("multipart/"):
-        form = await request.form()
-        bank, file = str(form.get("bank", "")), form.get("file")
-        if not isinstance(file, UploadFile):
-            raise ApiError(422, "Приложите файл выписки в поле file")
-        data = await file.read(MAX_UPLOAD + 1)
-        if len(data) > MAX_UPLOAD:
-            raise ApiError(413, "Файл больше 10 МБ")
+        parsed, form = await _parse_upload(request)
         try:
-            parsed = pick_parser(data, bank)().parse(data)
+            batch = imports.import_statement(db, u, parsed, source="pdf", target=str(form.get("accountId") or "auto"))
         except LookupError as e:
-            raise ApiError(422, str(e)) from None
-        except NotImplementedError:
-            raise ApiError(501, "Разбор PDF-выписок этого банка ещё не реализован. Используйте демо-импорт (JSON).") from None
-        except ValueError as e:
-            raise ApiError(422, f"Не удалось прочитать выписку: {e}") from None
-        batch = imports.import_statement(db, u, parsed, source="pdf")
-        return report(batch, parsed.warnings)
+            raise ApiError(404, str(e)) from None
+        return report(batch, parsed.warnings, db)
     try:
         bank = (await request.json()).get("bank", "")
     except ValueError:
         raise ApiError(422, "Ожидается JSON {\"bank\": \"...\"} или multipart с файлом") from None
     today = as_of()
     parsed = synthetic.generate(bank, today - timedelta(days=SYNTHETIC_DAYS), today - timedelta(days=1))
-    return report(imports.import_statement(db, u, parsed, source="synthetic"))
+    return report(imports.import_statement(db, u, parsed, source="synthetic"), db=db)

@@ -11,7 +11,7 @@ import io
 import re
 from datetime import date
 
-from app.parsers.base import ParsedRow, ParsedStatement
+from app.parsers.base import ParsedRow, ParsedStatement, find_mask
 
 TABLE = {"text_x_tolerance": 1.5}
 DATE_RE = re.compile(r"^\d{2}\.\d{2}\.\d{4}$")
@@ -86,7 +86,7 @@ class HalykParser:
                 if card is None and "*" in (cells[8] or ""):
                     card = cells[8].strip()[-4:]
         st = ParsedStatement(bank=self.bank, account_name="Halyk карта" + (f" *{card}" if card else ""), rows=rows,
-                             warnings=warnings)
+                             warnings=warnings, account_mask=f"*{card}" if card and card.isdigit() else find_mask(text))
         opening = re.search(r"Входящий\s*остаток:\s*(-?[\d\s]+,\d{2})\s*KZT", text)
         closing = re.search(r"Исходящий\s*остаток:\s*(-?[\d\s]+,\d{2})\s*KZT", text)
         if period := re.search(r"Период\s*выписки:\s*с\s*(\d{2}\.\d{2}\.\d{4})\s*по\s*(\d{2}\.\d{2}\.\d{4})", text):

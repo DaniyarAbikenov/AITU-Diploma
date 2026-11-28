@@ -2,7 +2,7 @@
 import hashlib
 from collections import Counter, defaultdict
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.catalog import SUBSCRIPTION_HINTS
@@ -27,9 +27,34 @@ def user_rules(db: Session, user: User) -> dict[str, str]:
     return {r.merchant: r.category_id for r in rows}
 
 
-def get_or_create_account(db: Session, user: User, parsed: ParsedStatement) -> Account:
-    acc = db.scalar(select(Account).where(Account.user_id == user.id, Account.bank == parsed.bank,
-                                          Account.name == parsed.account_name))
+def match_account(db: Session, user: User, parsed: ParsedStatement) -> tuple[Account | None, str | None]:
+    """The user's account this statement belongs to and how it was found: by the number from the header (reliable),
+    by the header name (no number printed: needs the user's confirmation in the preview), or none."""
+    acc = db.scalar(select(Account).where(Account.user_id == user.id, Account.statement_key == parsed.statement_key))
+    if acc is not None:
+        return acc, "number" if parsed.account_mask else "name"
+    if parsed.account_mask:
+        acc = db.scalar(select(Account).where(Account.user_id == user.id, Account.bank == parsed.bank,
+                                              Account.number_mask == parsed.account_mask))
+        if acc is not None:
+            return acc, "number"
+    name_key = f"{parsed.bank}|name:{parsed.account_name}"
+    acc = db.scalar(select(Account).where(Account.user_id == user.id, Account.bank == parsed.bank, or_(
+        Account.statement_key == name_key,
+        and_(Account.statement_key.is_(None), Account.name == parsed.account_name))))
+    return (acc, "name") if acc is not None else (None, None)
+
+
+def get_or_create_account(db: Session, user: User, parsed: ParsedStatement, target: str = "auto") -> Account:
+    """target: "auto" (match by number, then by name), "new" (always a new account) or an account id the user chose.
+    The chosen or found account remembers the statement key, so renaming it later does not break the link."""
+    acc = None
+    if target not in ("auto", "new"):
+        acc = db.get(Account, int(target)) if str(target).isdigit() else None
+        if acc is None or acc.user_id != user.id:
+            raise LookupError("Счёт не найден")
+    elif target == "auto":
+        acc, _ = match_account(db, user, parsed)
     if acc is None:
         acc = Account(user_id=user.id, bank=parsed.bank, name=parsed.account_name, currency=statement_currency(parsed),
                       balance_minor=parsed.closing_balance_minor or 0, kind=guess_kind(parsed.account_name),
@@ -38,7 +63,25 @@ def get_or_create_account(db: Session, user: User, parsed: ParsedStatement) -> A
         db.flush()
     elif parsed.closing_balance_minor is not None and not _older_than_known(db, acc, parsed):
         acc.balance_minor = parsed.closing_balance_minor  # the newest statement carries the current balance
+    # a number from the header upgrades a name-based key; a key never changes when the account is renamed
+    if acc.statement_key is None or (parsed.account_mask and acc.number_mask is None):
+        acc.statement_key = parsed.statement_key
+    if parsed.account_mask and acc.number_mask is None:
+        acc.number_mask = parsed.account_mask
     return acc
+
+
+def backfill_statement_keys(db: Session) -> int:
+    """Accounts created by imports before statement keys existed get a key from their current bank and name.
+    Only the key is written; operations, balances and names stay as they are."""
+    rows = db.scalars(select(Account).where(Account.statement_key.is_(None))).all()
+    n = 0
+    for a in rows:
+        if db.scalar(select(ImportBatch.id).where(ImportBatch.user_id == a.user_id, ImportBatch.bank == a.bank).limit(1)):
+            a.statement_key = f"{a.bank}|name:{a.name}"
+            n += 1
+    db.commit()
+    return n
 
 
 def statement_currency(parsed: ParsedStatement) -> str:
@@ -77,10 +120,11 @@ def dedup_key(user_id: int, account_id: int, row, seq: int) -> str:
     return hashlib.sha1(raw.encode()).hexdigest()
 
 
-def import_statement(db: Session, user: User, parsed: ParsedStatement, source: str = "synthetic") -> ImportBatch:
+def import_statement(db: Session, user: User, parsed: ParsedStatement, source: str = "synthetic",
+                     target: str = "auto") -> ImportBatch:
     """Idempotent: re-importing the same statement adds no rows (dedup on date, amount, merchant, occurrence #)."""
-    acc = get_or_create_account(db, user, parsed)
-    batch = ImportBatch(user_id=user.id, bank=parsed.bank, source=source, status="done")
+    acc = get_or_create_account(db, user, parsed, target)
+    batch = ImportBatch(user_id=user.id, bank=parsed.bank, source=source, status="done", account_id=acc.id)
     db.add(batch)
     db.flush()
     rules = user_rules(db, user)

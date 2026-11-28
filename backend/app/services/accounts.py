@@ -70,7 +70,7 @@ def account_out(db: Session, a: Account) -> AccountOut:
         then = fx.rate_on(db, a.currency, date.fromisoformat(as_of)) if a.currency != "KZT" else 1.0
         if then is not None:
             out.revaluationKzt = to_major(round(a.balance_minor * (r.rate - then)))
-    out.interestRate, out.earlyWithdrawal = a.interest_rate, a.early_withdrawal
+    out.interestRate, out.earlyWithdrawal, out.numberMask = a.interest_rate, a.early_withdrawal, a.number_mask
     if a.frozen_until is not None:
         out.frozenUntil = a.frozen_until.isoformat()
     if known:

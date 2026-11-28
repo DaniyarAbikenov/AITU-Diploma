@@ -12,6 +12,7 @@ from app.core.errors import install_error_handlers
 from app.core.migrate import add_missing_columns
 from app.routers import auth, data, finance, macro, planned, planning, transfers
 from app.seed import ensure_reference_data, seed_all
+from app.services import imports as imports_svc
 from app.services import nbk
 
 API_PREFIX = "/api/v1"
@@ -38,6 +39,7 @@ async def lifespan(_: FastAPI):
     Base.metadata.create_all(engine)
     add_missing_columns(engine)
     with SessionLocal() as db:
+        imports_svc.backfill_statement_keys(db)
         if settings.seed_demo:
             seed_all(db)
         else:

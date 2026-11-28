@@ -92,6 +92,7 @@ class AccountOut(BaseModel):
     availableKzt: int | float | None = None
     interestRate: float | None = None
     earlyWithdrawal: Early | None = None
+    numberMask: str | None = None  # last digits of the card/account number from statements
 
 
 class AccountIn(BaseModel):
@@ -259,6 +260,38 @@ class ImportReportOut(BaseModel):
     period: dict[str, str]
     bank: str
     warnings: list[str] = []
+    accountId: str | None = None
+    accountName: str | None = None
+
+
+class ImportAccountOption(BaseModel):
+    id: str
+    bank: str
+    name: str
+    currency: str
+    numberMask: str | None = None
+
+
+class ImportPreviewOut(BaseModel):
+    """What the statement is and which account it would go to. Nothing is written yet."""
+    bank: str
+    accountName: str
+    numberMask: str | None = None  # "*1234" from the header; null = the header has no number
+    currency: str
+    periodFrom: str | None = None
+    periodTo: str | None = None
+    operations: int
+    closingBalance: int | float | None = None
+    suggestedAccountId: str | None = None
+    matchedBy: Literal["number", "name"] | None = None
+    # true when the account could not be identified by number: the user must pick an account or "new"
+    needsChoice: bool
+    accounts: list[ImportAccountOption]
+    warnings: list[str] = []
+
+
+class MoveOperationsIn(BaseModel):
+    targetAccountId: str
 
 
 class ImportJsonIn(BaseModel):

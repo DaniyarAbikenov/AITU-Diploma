@@ -8,7 +8,7 @@ import io
 import re
 from datetime import date
 
-from app.parsers.base import ParsedRow, ParsedStatement
+from app.parsers.base import ParsedRow, ParsedStatement, find_mask
 
 DATE_RE = re.compile(r"^\d{2}\.\d{2}\.\d{4}$")
 AMOUNT_RE = re.compile(r"^([+-])\s*([\d,]+)\.(\d{2})\s*[₸$€]?$")
@@ -68,7 +68,8 @@ def parse_pages(pages_words: list[list[dict]], text: str = "") -> ParsedStatemen
         op = cell("op")
         parsed.append(ParsedRow(booked_on=_date(r["date"]), amount_minor=_minor(*m.groups()),
                                 merchant=details or op, currency=cell("currency") or "KZT"))
-    st = ParsedStatement(bank="Freedom Bank", account_name=_account_name(text), rows=parsed, warnings=warnings)
+    st = ParsedStatement(bank="Freedom Bank", account_name=_account_name(text), rows=parsed, warnings=warnings,
+                         account_mask=find_mask(text.split("Краткое содержание")[0]))
     _header(st, text)
     _reconcile(st, text)
     return st

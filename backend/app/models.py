@@ -50,6 +50,11 @@ class Account(Base):
     kind: Mapped[str | None] = mapped_column(String(20), nullable=True)  # current | savings | deposit | cash; NULL = not set
     # availability: money until `frozen_until` is the user's (counts in capital) but not available (not in the liquid
     # pool, Safe-to-Spend or reserve days). frozen_minor = the blocked part; NULL with a date = the whole balance.
+    # stable link to bank statements, independent of the display name: "<bank>|*1234" (last digits of the card or
+    # account number from the statement header, never the full number) or "<bank>|name:<header name>" when the
+    # header has no number. number_mask keeps only the last 4 digits.
+    statement_key: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    number_mask: Mapped[str | None] = mapped_column(String(8), nullable=True)
     frozen_until: Mapped[date | None] = mapped_column(Date, nullable=True)
     frozen_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     interest_rate: Mapped[float | None] = mapped_column(Float, nullable=True)  # % a year, for information
@@ -108,6 +113,7 @@ class ImportBatch(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     bank: Mapped[str] = mapped_column(String(80))
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
     source: Mapped[str] = mapped_column(String(20), default="synthetic")  # synthetic | pdf
     status: Mapped[str] = mapped_column(String(20), default="done")
     parsed: Mapped[int] = mapped_column(Integer, default=0)
