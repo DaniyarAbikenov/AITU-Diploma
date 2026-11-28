@@ -46,8 +46,17 @@ def account_out(db: Session, a: Account) -> AccountOut:
                                                                      ImportBatch.bank == a.bank))
         if end is not None:
             known, as_of, source = True, end.isoformat(), "statement"
+    current = None
+    if known:
+        # manual operations entered after the known balance move it; imported ones are already in the statement
+        since = date.fromisoformat(as_of)
+        delta = db.scalar(select(func.coalesce(func.sum(eff_amount), 0)).where(
+            Transaction.account_id == a.id, Transaction.source == "manual", Transaction.voided.is_(False),
+            eff_date > since)) or 0
+        current = to_major(a.balance_minor + int(delta))
     return AccountOut(id=str(a.id), bank=a.bank, name=a.name, currency=a.currency, balance=to_major(a.balance_minor),
-                      kind=a.kind, confirmed=a.confirmed, balanceKnown=known, balanceAsOf=as_of, balanceSource=source)
+                      kind=a.kind, confirmed=a.confirmed, balanceKnown=known, balanceAsOf=as_of, balanceSource=source,
+                      currentBalance=current)
 
 
 def effective_kind(t: Transaction) -> str:
@@ -59,6 +68,21 @@ def effective_kind(t: Transaction) -> str:
 
 
 def is_cashflow():
-    """SQL condition: the operation is income or spending, not a move between the user's own accounts."""
-    return or_(and_(Transaction.user_kind.is_(None), Transaction.internal.is_(False)),
-               and_(Transaction.user_kind.is_not(None), Transaction.user_kind != "transfer_own"))
+    """SQL condition: the operation is income or spending, not a move between the user's own accounts and not
+    cancelled by the user."""
+    return and_(Transaction.voided.is_(False),
+                or_(and_(Transaction.user_kind.is_(None), Transaction.internal.is_(False)),
+                    and_(Transaction.user_kind.is_not(None), Transaction.user_kind != "transfer_own")))
+
+
+# Effective values: the user's correction when there is one, otherwise the imported value.
+eff_amount = func.coalesce(Transaction.user_amount_minor, Transaction.amount_minor)
+eff_date = func.coalesce(Transaction.user_booked_on, Transaction.booked_on)
+
+
+def tx_amount(t: Transaction) -> int:
+    return t.user_amount_minor if t.user_amount_minor is not None else t.amount_minor
+
+
+def tx_date(t: Transaction) -> date:
+    return t.user_booked_on or t.booked_on

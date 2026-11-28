@@ -1,7 +1,8 @@
+import uuid
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 from starlette.datastructures import UploadFile
 
@@ -10,7 +11,17 @@ from app.core.db import get_db
 from app.core.errors import ApiError
 from app.core.money import to_major, to_minor
 from app.core.security import current_user
-from app.models import Account, AccountCheckpoint, Category, ImportBatch, MerchantRule, Transaction, User
+from app.models import (
+    Account,
+    AccountCheckpoint,
+    Category,
+    ImportBatch,
+    MerchantRule,
+    PlannedSettlement,
+    Transaction,
+    TransactionEdit,
+    User,
+)
 from app.parsers import synthetic
 from app.parsers.registry import pick_parser
 from app.schemas import (
@@ -25,6 +36,8 @@ from app.schemas import (
     MerchantRuleOut,
     Ok,
     RecategorizeIn,
+    TransactionEditOut,
+    TransactionIn,
     TransactionOut,
     TxKindIn,
 )
@@ -37,10 +50,46 @@ SYNTHETIC_DAYS = 130
 
 
 def tx_out(t: Transaction) -> TransactionOut:
-    return TransactionOut(id=str(t.id), date=t.booked_on.isoformat(), amount=to_major(t.amount_minor), currency=t.currency,
-                          merchant=t.merchant, categoryId=t.category_id, accountId=str(t.account_id),
+    corrected = t.source == "import" and (t.user_amount_minor is not None or t.user_booked_on is not None)
+    original = {"amount": to_major(t.amount_minor), "date": t.booked_on.isoformat()} if corrected else None
+    return TransactionOut(id=str(t.id), date=acc_svc.tx_date(t).isoformat(), amount=to_major(acc_svc.tx_amount(t)),
+                          currency=t.currency, merchant=t.merchant, categoryId=t.category_id, accountId=str(t.account_id),
                           needsReview=t.needs_review, internal=t.internal, kind=acc_svc.effective_kind(t),
-                          kindSource="user" if t.user_kind else "auto")
+                          kindSource="user" if t.user_kind else "auto", source=t.source, note=t.user_note,
+                          voided=t.voided, original=original)
+
+
+def _snapshot(t: Transaction) -> dict:
+    o = tx_out(t)
+    return {"date": o.date, "amount": o.amount, "merchant": o.merchant, "category": o.categoryId, "note": o.note,
+            "account": o.accountId, "kind": o.kind, "voided": o.voided}
+
+
+def _audit(db: Session, t: Transaction, action: str, before: dict | None) -> None:
+    after = None if action == "delete" else _snapshot(t)
+    db.add(TransactionEdit(user_id=t.user_id, transaction_id=t.id, action=action, before=before, after=after))
+
+
+def _own_tx(db: Session, u: User, tx_id: int) -> Transaction:
+    t = db.get(Transaction, tx_id)
+    if not t or t.user_id != u.id:
+        raise ApiError(404, "Операция не найдена")
+    return t
+
+
+def _parse_day(value: str) -> date:
+    d = date.fromisoformat(value)
+    if d > as_of() + timedelta(days=1):
+        raise ApiError(422, "Фактическая операция не может быть в будущем. Для будущих трат используйте план.")
+    return d
+
+
+def _default_category(kind: str | None, amount_minor: int) -> str:
+    if kind == "transfer_own":
+        return "transfers"
+    if (kind or "").startswith("income") or (kind is None and amount_minor > 0):
+        return "income"
+    return "other"
 
 
 def _category_or_422(db: Session, category_id: str) -> None:
@@ -127,28 +176,121 @@ def transactions(date_from: date | None = None, date_to: date | None = None, cat
     if bank:
         stmt = stmt.join(Account, Account.id == Transaction.account_id).where(Account.bank == bank)
     if date_from:
-        stmt = stmt.where(Transaction.booked_on >= date_from)
+        stmt = stmt.where(acc_svc.eff_date >= date_from)
     if date_to:
-        stmt = stmt.where(Transaction.booked_on <= date_to)
+        stmt = stmt.where(acc_svc.eff_date <= date_to)
     if category:
         stmt = stmt.where(Transaction.category_id == category)
     if account:
         stmt = stmt.where(Transaction.account_id == account)
     if q:
         stmt = stmt.where(Transaction.merchant.ilike(f"%{q}%"))
-    rows = db.scalars(stmt.order_by(Transaction.booked_on.desc(), Transaction.id.desc()).limit(min(limit, 10000)).offset(offset))
+    rows = db.scalars(stmt.order_by(acc_svc.eff_date.desc(), Transaction.id.desc()).limit(min(limit, 10000)).offset(offset))
     return [tx_out(t) for t in rows]
 
 
-@router.patch("/transactions/{tx_id}", response_model=TransactionOut)
-def recategorize(tx_id: int, body: RecategorizeIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
-    t = db.get(Transaction, tx_id)
-    if not t or t.user_id != u.id:
-        raise ApiError(404, "Операция не найдена")
-    _category_or_422(db, body.category)
-    t.category_id, t.category_source, t.needs_review = body.category, "user", False
+@router.post("/transactions", response_model=TransactionOut, status_code=201)
+def create_transaction(body: TransactionIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    """A manual operation (cash, a purchase not imported yet). Negative amount = money out."""
+    if body.amount == 0:
+        raise ApiError(422, "Сумма операции не может быть нулевой")
+    acc = _own_account(db, u, int(body.accountId)) if body.accountId.isdigit() else None
+    if acc is None:
+        raise ApiError(404, "Счёт не найден")
+    amount = to_minor(body.amount)
+    category = body.category or _default_category(body.kind, amount)
+    _category_or_422(db, category)
+    t = Transaction(user_id=u.id, account_id=acc.id, booked_on=_parse_day(body.date), amount_minor=amount,
+                    currency=acc.currency, merchant=body.merchant.strip(), category_id=category, category_source="user",
+                    needs_review=False, internal=body.kind == "transfer_own", user_kind=body.kind, source="manual",
+                    user_note=(body.note or "").strip() or None, dedup_key="manual-" + uuid.uuid4().hex)
+    db.add(t)
+    db.flush()
+    _audit(db, t, "create", None)
     db.commit()
     return tx_out(t)
+
+
+@router.patch("/transactions/{tx_id}", response_model=TransactionOut)
+def update_transaction(tx_id: int, body: RecategorizeIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Manual operations are edited directly. For an imported one the change is stored as a user correction
+    (user_amount_minor, user_booked_on, user_note) next to the untouched original, with before/after history."""
+    t = _own_tx(db, u, tx_id)
+    before = _snapshot(t)
+    sent = body.model_fields_set
+    if body.category is not None:
+        _category_or_422(db, body.category)
+        t.category_id, t.category_source, t.needs_review = body.category, "user", False
+    if body.amount is not None:
+        if body.amount == 0:
+            raise ApiError(422, "Сумма операции не может быть нулевой")
+        if t.source == "manual":
+            t.amount_minor = to_minor(body.amount)
+        else:
+            t.user_amount_minor = None if to_minor(body.amount) == t.amount_minor else to_minor(body.amount)
+    if body.date is not None:
+        d = _parse_day(body.date)
+        if t.source == "manual":
+            t.booked_on = d
+        else:
+            t.user_booked_on = None if d == t.booked_on else d
+    if "note" in sent:
+        t.user_note = (body.note or "").strip() or None
+    if t.source == "manual":
+        if body.merchant:
+            t.merchant = body.merchant.strip()
+        if body.accountId:
+            t.account_id = _own_account(db, u, int(body.accountId)).id
+    elif body.merchant and body.merchant.strip() != t.merchant:
+        t.user_note = body.merchant.strip()  # the imported description stays; the user's wording goes to the note
+    db.flush()
+    if _snapshot(t) != before:
+        _audit(db, t, "update", before)
+    db.commit()
+    return tx_out(t)
+
+
+@router.delete("/transactions/{tx_id}", response_model=Ok)
+def delete_transaction(tx_id: int, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Manual operations are deleted. Imported ones cannot be: cancel them with POST /transactions/{id}/void."""
+    t = _own_tx(db, u, tx_id)
+    if t.source != "manual":
+        raise ApiError(409, "Операцию из выписки нельзя удалить, её можно только отменить")
+    before = _snapshot(t)
+    _audit(db, t, "delete", before)
+    db.execute(delete(PlannedSettlement).where(PlannedSettlement.transaction_id == t.id))
+    db.delete(t)
+    db.commit()
+    return Ok()
+
+
+@router.post("/transactions/{tx_id}/void", response_model=TransactionOut)
+def void_transaction(tx_id: int, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Cancel an operation: it stays in the history but leaves every total, balance and forecast."""
+    t = _own_tx(db, u, tx_id)
+    before = _snapshot(t)
+    t.voided = True
+    _audit(db, t, "void", before)
+    db.commit()
+    return tx_out(t)
+
+
+@router.post("/transactions/{tx_id}/restore", response_model=TransactionOut)
+def restore_transaction(tx_id: int, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    t = _own_tx(db, u, tx_id)
+    before = _snapshot(t)
+    t.voided = False
+    _audit(db, t, "restore", before)
+    db.commit()
+    return tx_out(t)
+
+
+@router.get("/transactions/{tx_id}/history", response_model=list[TransactionEditOut])
+def transaction_history(tx_id: int, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    t = _own_tx(db, u, tx_id)
+    rows = db.scalars(select(TransactionEdit).where(TransactionEdit.transaction_id == t.id,
+                                                    TransactionEdit.user_id == u.id).order_by(TransactionEdit.id))
+    return [TransactionEditOut(action=e.action, before=e.before, after=e.after, at=e.created_at.isoformat()) for e in rows]
 
 
 @router.patch("/transactions/{tx_id}/kind", response_model=TransactionOut)
@@ -156,11 +298,11 @@ def set_kind(tx_id: int, body: TxKindIn, u: User = Depends(current_user), db: Se
     """The user's decision about the operation type (expense, income, own transfer, transfer to someone else).
     It is stored next to the imported original, which is not changed, and wins over automatic rules (FR-10, FR-17).
     saveRule applies it to every operation of the merchant and to future imports."""
-    t = db.get(Transaction, tx_id)
-    if not t or t.user_id != u.id:
-        raise ApiError(404, "Операция не найдена")
+    t = _own_tx(db, u, tx_id)
+    before = _snapshot(t)
     t.user_kind = body.kind
     t.needs_review = False
+    _audit(db, t, "update", before)
     if body.saveRule:
         for other in db.scalars(select(Transaction).where(Transaction.user_id == u.id, Transaction.merchant == t.merchant)):
             other.user_kind = body.kind

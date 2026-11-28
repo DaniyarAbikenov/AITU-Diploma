@@ -23,9 +23,12 @@ from app.models import (
     InsightDismissal,
     MerchantRule,
     Obligation,
+    PlannedPayment,
+    PlannedSettlement,
     ResilienceSnapshot,
     SavedScenario,
     Transaction,
+    TransactionEdit,
     User,
 )
 from app.parsers import synthetic
@@ -38,7 +41,7 @@ TEST_NAME = "Тестовый пользователь"
 
 
 def _wipe(db, user: User) -> None:
-    for model in (Transaction, ImportBatch, AccountCheckpoint, Account, MerchantRule, Obligation, IncomeSource, Goal,
+    for model in (PlannedSettlement, PlannedPayment, TransactionEdit, Transaction, ImportBatch, AccountCheckpoint, Account, MerchantRule, Obligation, IncomeSource, Goal,
                   SavedScenario, InsightDismissal, ResilienceSnapshot):
         db.execute(delete(model).where(model.user_id == user.id))
     db.commit()

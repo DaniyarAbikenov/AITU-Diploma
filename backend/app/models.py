@@ -108,6 +108,14 @@ class Transaction(Base):
     # The user's own decision about the operation type. It overrides the imported `internal` flag and the
     # amount sign; the imported original is kept untouched (FR-10, FR-17).
     user_kind: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # import = from a bank statement (only type and category may be changed), manual = entered by the user
+    source: Mapped[str] = mapped_column(String(10), default="import", server_default="import")
+    # user corrections over an imported operation (NULL = keep the imported value)
+    user_amount_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    user_booked_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    user_note: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # cancelled by the user: kept for history, excluded from every calculation
+    voided: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     dedup_key: Mapped[str] = mapped_column(String(64))
 
 
@@ -133,6 +141,8 @@ class Obligation(Base):
     confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     detected: Mapped[bool] = mapped_column(Boolean, default=False)
     rejected: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    category_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    debt_left_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # remaining loan, if known
 
 
 class IncomeSource(Base):
@@ -148,6 +158,51 @@ class IncomeSource(Base):
     # The amount varies from payout to payout: cautious plans use the lower bound (FR-29).
     amount_min_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     amount_max_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
+class PlannedPayment(Base):
+    """A planned item that is not a monthly obligation: a one-off or yearly expense or income on a date
+    (optionally a window due_on..due_to). Payment is recorded by linking actual operations (settlements)."""
+    __tablename__ = "planned_payments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    direction: Mapped[str] = mapped_column(String(10), default="expense")  # expense | income
+    amount_minor: Mapped[int] = mapped_column(BigInteger)
+    due_on: Mapped[date] = mapped_column(Date)
+    due_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    repeat: Mapped[str] = mapped_column(String(10), default="once")  # once | yearly
+    category_id: Mapped[str | None] = mapped_column(ForeignKey("categories.id"), nullable=True)
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
+    mandatory: Mapped[bool] = mapped_column(Boolean, default=True)
+    movable: Mapped[bool] = mapped_column(Boolean, default=False)
+    cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class PlannedSettlement(Base):
+    """Links an actual operation to a planned item (partial payments allowed). `period` is the due date of the
+    occurrence it pays, so a yearly item keeps its history."""
+    __tablename__ = "planned_settlements"
+    __table_args__ = (UniqueConstraint("planned_id", "transaction_id", name="uq_settlement"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    planned_id: Mapped[int] = mapped_column(ForeignKey("planned_payments.id"), index=True)
+    transaction_id: Mapped[int] = mapped_column(ForeignKey("transactions.id"), index=True)
+    amount_minor: Mapped[int] = mapped_column(BigInteger)
+    period: Mapped[date] = mapped_column(Date)
+
+
+class TransactionEdit(Base):
+    """Audit of user corrections: what changed, before and after. Imported originals are never overwritten."""
+    __tablename__ = "transaction_edits"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    transaction_id: Mapped[int] = mapped_column(Integer, index=True)
+    action: Mapped[str] = mapped_column(String(12))  # create | update | void | restore | delete
+    before: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    after: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class Goal(Base):

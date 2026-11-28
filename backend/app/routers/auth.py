@@ -17,9 +17,12 @@ from app.models import (
     InsightDismissal,
     MerchantRule,
     Obligation,
+    PlannedPayment,
+    PlannedSettlement,
     ResilienceSnapshot,
     SavedScenario,
     Transaction,
+    TransactionEdit,
     User,
 )
 from app.schemas import AuthOut, LoginIn, Ok, ProfilePatch, RegisterIn, UserOut
@@ -92,7 +95,7 @@ def update_me(body: ProfilePatch, u: User = Depends(current_user), db: Session =
 @router.delete("/me", response_model=Ok)
 def delete_my_data(u: User = Depends(current_user), db: Session = Depends(get_db)):
     """Right to erasure: removes every financial record of the user. The login itself is kept."""
-    for model in (Transaction, ImportBatch, AccountCheckpoint, Account, MerchantRule, Obligation, IncomeSource, Goal, SavedScenario,
+    for model in (PlannedSettlement, PlannedPayment, TransactionEdit, Transaction, ImportBatch, AccountCheckpoint, Account, MerchantRule, Obligation, IncomeSource, Goal, SavedScenario,
                   InsightDismissal, ResilienceSnapshot):
         db.execute(delete(model).where(model.user_id == u.id))
     db.commit()

@@ -71,6 +71,8 @@ class AccountOut(BaseModel):
     balanceKnown: bool = False
     balanceAsOf: str | None = None
     balanceSource: Literal["manual", "statement"] | None = None
+    # checkpoint balance plus manual operations dated after it (null when the balance is unknown)
+    currentBalance: int | float | None = None
 
 
 class AccountIn(BaseModel):
@@ -123,6 +125,29 @@ class TransactionOut(BaseModel):
     # effective operation type: the user's decision if any, otherwise derived from the import
     kind: TxKind = "expense"
     kindSource: Literal["user", "auto"] = "auto"
+    source: Literal["import", "manual"] = "import"
+    note: str | None = None
+    voided: bool = False
+    # imported values when the user corrected them (null = no correction)
+    original: dict | None = None
+
+
+class TransactionEditOut(BaseModel):
+    action: str
+    before: dict | None = None
+    after: dict | None = None
+    at: str
+
+
+class TransactionIn(BaseModel):
+    """A manual operation. amount is signed: negative = money out of the account, positive = money in."""
+    accountId: str
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    amount: float = Field(ge=-1e12, le=1e12)
+    merchant: str = Field(min_length=1, max_length=200)
+    category: str | None = None
+    kind: TxKind | None = None
+    note: str | None = Field(default=None, max_length=200)
 
 
 class TxKindIn(BaseModel):
@@ -132,7 +157,13 @@ class TxKindIn(BaseModel):
 
 
 class RecategorizeIn(BaseModel):
-    category: str
+    """Imported operations accept only `category`; manual ones accept every field."""
+    category: str | None = None
+    accountId: str | None = None
+    date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    amount: float | None = Field(default=None, ge=-1e12, le=1e12)
+    merchant: str | None = Field(default=None, min_length=1, max_length=200)
+    note: str | None = Field(default=None, max_length=200)
 
 
 class BulkCategorizeIn(BaseModel):
@@ -249,14 +280,95 @@ class ObligationOut(BaseModel):
     endsAt: str | None = None
     confirmed: bool
     rejected: bool = False
+    categoryId: str | None = None
+    debtLeft: int | float | None = None
 
 
 class ObligationIn(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=200)
     kind: Literal["credit", "installment", "rent", "subscription", "utility"]
-    amount: float = Field(gt=0)
+    amount: float = Field(gt=0, le=1e12)
     dayOfMonth: int = Field(ge=1, le=31)
     endsAt: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}$")
+    category: str | None = None
+    debtLeft: float | None = Field(default=None, ge=0, le=1e12)
+
+
+class ObligationPatch(BaseModel):
+    """Edit a regular payment and/or decide on it. endsAt: null clears the end month."""
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    kind: Literal["credit", "installment", "rent", "subscription", "utility"] | None = None
+    amount: float | None = Field(default=None, gt=0, le=1e12)
+    dayOfMonth: int | None = Field(default=None, ge=1, le=31)
+    endsAt: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}$")
+    category: str | None = None
+    debtLeft: float | None = Field(default=None, ge=0, le=1e12)
+    confirmed: bool | None = None
+    rejected: bool | None = None
+
+
+PlannedStatus = Literal["planned", "partial", "paid", "cancelled"]
+DATE = r"^\d{4}-\d{2}-\d{2}$"
+
+
+class PlannedPaymentIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    direction: Literal["expense", "income"] = "expense"
+    amount: float = Field(gt=0, le=1e12)
+    dueOn: str = Field(pattern=DATE)
+    dueTo: str | None = Field(default=None, pattern=DATE)
+    repeat: Literal["once", "yearly"] = "once"
+    category: str | None = None
+    accountId: str | None = None
+    mandatory: bool = True
+    movable: bool = False
+
+
+class PlannedPaymentPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    direction: Literal["expense", "income"] | None = None
+    amount: float | None = Field(default=None, gt=0, le=1e12)
+    dueOn: str | None = Field(default=None, pattern=DATE)
+    dueTo: str | None = Field(default=None, pattern=DATE)
+    repeat: Literal["once", "yearly"] | None = None
+    category: str | None = None
+    accountId: str | None = None
+    mandatory: bool | None = None
+    movable: bool | None = None
+    cancelled: bool | None = None
+
+
+class SettleIn(BaseModel):
+    """Pay a planned item: link an existing operation, or create one manual operation from these fields.
+    amount may be less than what is left (partial payment)."""
+    transactionId: str | None = None
+    amount: float | None = Field(default=None, gt=0, le=1e12)
+    accountId: str | None = None
+    date: str | None = Field(default=None, pattern=DATE)
+
+
+class SettlementOut(BaseModel):
+    transactionId: str
+    amount: int | float
+    period: str
+
+
+class PlannedPaymentOut(BaseModel):
+    id: str
+    name: str
+    direction: Literal["expense", "income"]
+    amount: int | float
+    dueOn: str
+    dueTo: str | None = None
+    repeat: Literal["once", "yearly"]
+    categoryId: str | None = None
+    accountId: str | None = None
+    mandatory: bool
+    movable: bool
+    status: PlannedStatus
+    paid: int | float
+    left: int | float
+    settlements: list[SettlementOut] = []
 
 
 class ConfirmIn(BaseModel):

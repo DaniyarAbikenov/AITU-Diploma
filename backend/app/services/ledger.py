@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.catalog import FIXED_CATEGORIES
 from app.models import Account, Category, IncomeSource, MacroSeries, Obligation, Transaction, User
-from app.services.accounts import is_cashflow
+from app.services.accounts import eff_amount, eff_date, is_cashflow
 
 WINDOW_DAYS = 90
 
@@ -85,9 +85,9 @@ def build_context(db: Session, user: User, as_of: date) -> Context:
     ]
     horizon_start = as_of - timedelta(days=400)
     rows = db.execute(
-        select(Transaction.booked_on, Transaction.amount_minor, Transaction.category_id).where(
+        select(eff_date, eff_amount, Transaction.category_id).where(
             Transaction.user_id == user.id, is_cashflow(), Transaction.currency == "KZT",
-            Transaction.booked_on >= horizon_start, Transaction.booked_on <= as_of)
+            eff_date >= horizon_start, eff_date <= as_of)
     ).all()
     txs = [Tx(r[0], r[1] / 100, r[2]) for r in rows]
     cats = db.scalars(select(Category)).all()

@@ -9,10 +9,9 @@ from app.core.db import get_db
 from app.core.errors import ApiError
 from app.core.money import to_major, to_minor
 from app.core.security import current_user
-from app.models import Goal, IncomeSource, Obligation, Transaction, User
+from app.models import Category, Goal, IncomeSource, Obligation, Transaction, User
 from app.schemas import (
     CalendarMonth,
-    ConfirmIn,
     DtiPointOut,
     GoalIn,
     GoalOut,
@@ -22,11 +21,12 @@ from app.schemas import (
     IncomeSourcePatch,
     ObligationIn,
     ObligationOut,
+    ObligationPatch,
     ObligationsCalendarOut,
     Ok,
 )
 from app.services import goals as goal_svc
-from app.services.accounts import is_cashflow
+from app.services.accounts import eff_amount, eff_date, is_cashflow
 from app.services.ledger import add_months, month_key
 
 router = APIRouter(tags=["planning"])
@@ -34,7 +34,8 @@ router = APIRouter(tags=["planning"])
 
 def ob_out(o: Obligation) -> ObligationOut:
     return ObligationOut(id=str(o.id), name=o.name, kind=o.kind, amount=to_major(o.amount_minor), dayOfMonth=o.day_of_month,
-                         endsAt=o.ends_at, confirmed=o.confirmed, rejected=o.rejected)
+                         endsAt=o.ends_at, confirmed=o.confirmed, rejected=o.rejected, categoryId=o.category_id,
+                         debtLeft=None if o.debt_left_minor is None else to_major(o.debt_left_minor))
 
 
 def _apply_decision(row, body) -> None:
@@ -48,6 +49,11 @@ def _apply_decision(row, body) -> None:
             row.confirmed = False
         if body.rejected is False:
             row.rejected = False
+
+
+def _category_ok(db: Session, category: str | None) -> None:
+    if category is not None and db.get(Category, category) is None:
+        raise ApiError(422, f"Неизвестная категория: {category}")
 
 
 def _own(db: Session, model, item_id: int, user: User, what: str):
@@ -65,16 +71,35 @@ def obligations(u: User = Depends(current_user), db: Session = Depends(get_db)):
 
 @router.post("/obligations", response_model=ObligationOut, status_code=201)
 def add_obligation(body: ObligationIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
-    o = Obligation(user_id=u.id, name=body.name, kind=body.kind, amount_minor=to_minor(body.amount),
-                   day_of_month=body.dayOfMonth, ends_at=body.endsAt, confirmed=True)
+    _category_ok(db, body.category)
+    o = Obligation(user_id=u.id, name=body.name.strip(), kind=body.kind, amount_minor=to_minor(body.amount),
+                   day_of_month=body.dayOfMonth, ends_at=body.endsAt, confirmed=True, category_id=body.category,
+                   debt_left_minor=None if body.debtLeft is None else to_minor(body.debtLeft))
     db.add(o)
     db.commit()
     return ob_out(o)
 
 
 @router.patch("/obligations/{ob_id}", response_model=ObligationOut)
-def confirm_obligation(ob_id: int, body: ConfirmIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
+def update_obligation(ob_id: int, body: ObligationPatch, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Edit a regular payment (day 29–31 means the last day in shorter months) and/or confirm or reject it."""
     o = _own(db, Obligation, ob_id, u, "Обязательство")
+    sent = body.model_fields_set
+    if body.name:
+        o.name = body.name.strip()
+    if body.kind:
+        o.kind = body.kind
+    if body.amount is not None:
+        o.amount_minor = to_minor(body.amount)
+    if body.dayOfMonth is not None:
+        o.day_of_month = body.dayOfMonth
+    if "endsAt" in sent:
+        o.ends_at = body.endsAt
+    if "category" in sent:
+        _category_ok(db, body.category)
+        o.category_id = body.category
+    if "debtLeft" in sent:
+        o.debt_left_minor = None if body.debtLeft is None else to_minor(body.debtLeft)
     _apply_decision(o, body)
     db.commit()
     return ob_out(o)
@@ -118,7 +143,7 @@ def dti_history(months: int = 12, u: User = Depends(current_user), db: Session =
     keys = [month_key(add_months(cur, -k)) for k in range(max(1, min(months, 36)), 0, -1)]
     income = dict.fromkeys(keys, 0)
     debt = dict.fromkeys(keys, 0)
-    rows = db.execute(select(Transaction.booked_on, Transaction.amount_minor, Transaction.category_id).where(
+    rows = db.execute(select(eff_date, eff_amount, Transaction.category_id).where(
         Transaction.user_id == u.id, is_cashflow())).all()
     for on, amount, cat in rows:
         k = month_key(on)
