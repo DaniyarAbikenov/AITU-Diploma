@@ -1,0 +1,136 @@
+"""One consistent snapshot of a user's data for the signal evaluators: same as_of, perimeter and entities for all."""
+from dataclasses import dataclass, field
+from datetime import date, timedelta
+from functools import cached_property
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.core.config import as_of as app_today
+from app.core.money import to_minor
+from app.models import (
+    Account,
+    AccountCheckpoint,
+    Goal,
+    ImportBatch,
+    IncomeSource,
+    Obligation,
+    PlannedPayment,
+    Transaction,
+    User,
+)
+from app.services import accounts as acc_svc
+from app.services import fx
+from app.services import rules as rule_svc
+from app.services import safe_to_spend as sts_svc
+from app.services.ledger import month_key
+
+HISTORY_DAYS = 120
+
+
+@dataclass
+class Snapshot:
+    db: Session
+    user: User
+    as_of: date = field(default_factory=app_today)
+
+    @property
+    def id(self) -> str:
+        return f"u{self.user.id}@{self.as_of.isoformat()}"
+
+    @property
+    def month(self) -> str:
+        return month_key(self.as_of)
+
+    # ---- entities
+    @cached_property
+    def accounts(self) -> list[Account]:
+        return list(self.db.scalars(select(Account).where(Account.user_id == self.user.id).order_by(Account.id)))
+
+    @cached_property
+    def account_views(self) -> dict[int, object]:
+        return {a.id: acc_svc.account_out(self.db, a) for a in self.accounts}
+
+    @cached_property
+    def usable_accounts(self) -> list[Account]:
+        """Confirmed, typed accounts with a known balance and a tenge rate (same rule as the overview)."""
+        out = []
+        for a in self.accounts:
+            v = self.account_views[a.id]
+            if a.confirmed and a.kind and v.balanceKnown and v.currentBalanceKzt is not None:
+                out.append(a)
+        return out
+
+    def kzt_minor(self, amount_minor: int, currency: str) -> int | None:
+        return fx.to_kzt_minor(amount_minor, fx.latest(self.db, currency))
+
+    def available_kzt_minor(self, a: Account) -> int:
+        v = self.account_views[a.id]
+        return to_minor(v.availableKzt if v.availableKzt is not None else v.currentBalanceKzt)
+
+    @cached_property
+    def checkpoints(self) -> dict[int, AccountCheckpoint | None]:
+        return {a.id: acc_svc.latest_checkpoint(self.db, a) for a in self.accounts}
+
+    @cached_property
+    def batches(self) -> list[ImportBatch]:
+        return list(self.db.scalars(select(ImportBatch).where(ImportBatch.user_id == self.user.id)))
+
+    @cached_property
+    def transactions(self) -> list[Transaction]:
+        """Operations of the last HISTORY_DAYS days (cancelled ones excluded)."""
+        start = self.as_of - timedelta(days=HISTORY_DAYS)
+        return list(self.db.scalars(select(Transaction).where(
+            Transaction.user_id == self.user.id, Transaction.voided.is_(False), acc_svc.eff_date >= start,
+            acc_svc.eff_date <= self.as_of)))
+
+    @cached_property
+    def obligations(self) -> list[Obligation]:
+        return list(self.db.scalars(select(Obligation).where(Obligation.user_id == self.user.id,
+                                                             Obligation.rejected.is_(False))))
+
+    @cached_property
+    def incomes(self) -> list[IncomeSource]:
+        return list(self.db.scalars(select(IncomeSource).where(IncomeSource.user_id == self.user.id,
+                                                               IncomeSource.rejected.is_(False))))
+
+    @property
+    def confirmed_incomes(self) -> list[IncomeSource]:
+        return [i for i in self.incomes if i.confirmed]
+
+    @cached_property
+    def planned(self) -> list[PlannedPayment]:
+        return list(self.db.scalars(select(PlannedPayment).where(PlannedPayment.user_id == self.user.id,
+                                                                 PlannedPayment.cancelled.is_(False))))
+
+    @cached_property
+    def goals(self) -> list[Goal]:
+        return list(self.db.scalars(select(Goal).where(Goal.user_id == self.user.id)))
+
+    def rule_amount_minor(self, target_type: str, target_id: int, month: str) -> int | None:
+        c = rule_svc.compute(self.db, self.user, target_type, target_id, month, self.as_of)
+        return None if c is None or c.amount is None else int(c.amount * 100)
+
+    def planned_left_minor(self, p: PlannedPayment) -> int:
+        from app.routers.planned import out
+
+        return to_minor(out(self.db, p).left)
+
+    # ---- derived, single source of truth with the overview
+    @cached_property
+    def liquid_minor(self) -> int | None:
+        accs = [a for a in self.usable_accounts if a.kind in ("current", "cash")]
+        return sum(self.available_kzt_minor(a) for a in accs) if accs else None
+
+    @cached_property
+    def sts(self) -> sts_svc.SafeToSpend | None:
+        if self.liquid_minor is None:
+            return None
+        months = [self.month, month_key(self.as_of.replace(day=28) + timedelta(days=5))]
+        monthly = [(o.day_of_month, o.amount_minor, o.name, f"ob_{o.id}", o.ends_at,
+                    {m: self.rule_amount_minor("obligation", o.id, m) for m in months})
+                   for o in self.obligations if o.confirmed]
+        one_off = [sts_svc.Payment(p.due_on, self.planned_left_minor(p), p.name, f"pl_{p.id}")
+                   for p in self.planned if p.direction == "expense"]
+        return sts_svc.compute(self.as_of, self.liquid_minor, [i.day_of_month for i in self.confirmed_incomes],
+                               monthly, one_off)

@@ -36,6 +36,8 @@ class User(Base):
     planned_income_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     essential_expenses_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     work_hours_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # smart insights: opt-in of sensitive entries and thresholds (null = defaults of the knowledge base addendum)
+    insight_settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
@@ -286,6 +288,19 @@ class SavedScenario(Base):
     name: Mapped[str] = mapped_column(String(200))
     shocks: Mapped[list] = mapped_column(JSON)
     created_at: Mapped[date] = mapped_column(Date)
+
+
+class InsightState(Base):
+    """Hidden or snoozed smart insight: `key` = entry + root cause + entity + period; `fingerprint` of the evidence
+    values brings it back early when the facts change materially."""
+    __tablename__ = "insight_states"
+    __table_args__ = (UniqueConstraint("user_id", "key", name="uq_insight_state"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    key: Mapped[str] = mapped_column(String(200))
+    state: Mapped[str] = mapped_column(String(10))  # hidden | snoozed
+    until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    fingerprint: Mapped[str] = mapped_column(String(64), default="")
 
 
 class InsightDismissal(Base):
