@@ -27,7 +27,7 @@ TAB = {"onboarding": "profile", "transactions": "transactions", "cashflow": "hom
        "decisions": "forecast", "calendar": "calendar"}
 # sensitive wording: off until the user turns them on in the profile (addendum, review notes)
 OPT_IN = {"K064", "K065", "K066", "K070", "K075", "K076"}
-BUSINESS_REASON = "нужны данные: бизнес-счета и период их выписок (в приложении их нет)"
+BUSINESS_REASON = "нужны данные: обязательства бизнеса, налоговый фонд и полный период бизнес-счетов"
 
 
 @dataclass

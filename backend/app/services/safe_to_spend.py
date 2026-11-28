@@ -4,8 +4,10 @@ both are pinned to the control example of the spec by tests (C=100 000, payment 
 Horizon: today (day 1) to the day before the nearest confirmed income after today, else to the month end.
 F(d) = C − payments due on days 1..d; SafeDaily = floor(max(0, min F(d)/d)); deficit = max(0, −min F(d))."""
 import calendar
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from fractions import Fraction
 
 
 def monthly_date(year: int, month: int, day: int) -> date:
@@ -42,6 +44,7 @@ class SafeToSpend:
     deficit_minor: int
     first_deficit_day: date | None
     payments: list[Payment] = field(default_factory=list)
+    needs_minor: int = 0
 
     @property
     def committed_minor(self) -> int:
@@ -67,7 +70,7 @@ def safe_daily(balance_minor: int, due_by_day: list[int]) -> tuple[int, int, int
 
 def compute(today: date, balance_minor: int, income_days: list[int],
             monthly: list[tuple[int, int, str, str, str | None, dict[str, int | None] | None]],
-            one_off: list[Payment] = ()) -> SafeToSpend:
+            one_off: list[Payment] = (), needs: Callable[[date], Fraction] | None = None) -> SafeToSpend:
     """monthly: (day of month, amount, name, ref, endsAt YYYY-MM or None, amounts by YYYY-MM from rules or None)."""
     incomes = sorted(next_monthly(today, d) for d in income_days)
     nxt = next((d for d in incomes if d > today), None)
@@ -90,7 +93,15 @@ def compute(today: date, balance_minor: int, income_days: list[int],
         if d <= until and p.amount_minor > 0:
             due[(d - today).days] += p.amount_minor
             inside.append(Payment(d, p.amount_minor, p.name, p.ref))
+    needs_total = 0
+    if needs is not None:  # cumulative rounding: a monthly need never loses tiyn over the days
+        done = Fraction(0)
+        for i in range(days):
+            before = round(done)
+            done += needs(today + timedelta(days=i))
+            due[i] += round(done) - before
+        needs_total = round(done)
     daily, deficit, first_neg = safe_daily(balance_minor, due)
     return SafeToSpend(days, until, "income" if nxt else "month-end", nxt, daily, deficit,
                        today + timedelta(days=first_neg) if first_neg is not None else None,
-                       sorted(inside, key=lambda p: p.due))
+                       sorted(inside, key=lambda p: p.due), needs_total)

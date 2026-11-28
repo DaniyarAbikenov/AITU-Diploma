@@ -1,6 +1,8 @@
 """One consistent snapshot of a user's data for the signal evaluators: same as_of, perimeter and entities for all."""
+import calendar
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from fractions import Fraction
 from functools import cached_property
 
 from sqlalchemy import select
@@ -11,8 +13,10 @@ from app.core.money import to_minor
 from app.models import (
     Account,
     AccountCheckpoint,
+    DailyNeed,
     Goal,
     ImportBatch,
+    IncomeAllocation,
     IncomeSource,
     Obligation,
     PlannedPayment,
@@ -63,7 +67,7 @@ class Snapshot:
         out = []
         for a in self.accounts:
             v = self.account_views[a.id]
-            if a.confirmed and a.kind and v.balanceKnown and v.currentBalanceKzt is not None:
+            if a.perimeter == "personal" and a.confirmed and a.kind and v.balanceKnown and v.currentBalanceKzt is not None:
                 out.append(a)
         return out
 
@@ -83,12 +87,18 @@ class Snapshot:
         return list(self.db.scalars(select(ImportBatch).where(ImportBatch.user_id == self.user.id)))
 
     @cached_property
-    def transactions(self) -> list[Transaction]:
-        """Operations of the last HISTORY_DAYS days (cancelled ones excluded)."""
+    def all_transactions(self) -> list[Transaction]:
+        """Operations of the last HISTORY_DAYS days on every account (cancelled ones excluded)."""
         start = self.as_of - timedelta(days=HISTORY_DAYS)
         return list(self.db.scalars(select(Transaction).where(
             Transaction.user_id == self.user.id, Transaction.voided.is_(False), acc_svc.eff_date >= start,
             acc_svc.eff_date <= self.as_of)))
+
+    @cached_property
+    def transactions(self) -> list[Transaction]:
+        """Personal perimeter only: business accounts are never mixed into personal numbers (BR-03)."""
+        business = {a.id for a in self.accounts if a.perimeter == "business"}
+        return [t for t in self.all_transactions if t.account_id not in business]
 
     @cached_property
     def obligations(self) -> list[Obligation]:
@@ -129,7 +139,7 @@ class Snapshot:
         return t.user_booked_on or t.booked_on
 
     def is_own_transfer(self, t: Transaction) -> bool:
-        return t.user_kind == "transfer_own" or (t.user_kind is None and t.internal)
+        return t.user_kind in acc_svc.OWN_MOVES or (t.user_kind is None and t.internal)
 
     def cashflow(self, start, end, currency: str = "KZT") -> list[Transaction]:
         """Income and spending operations in [start, end] (own transfers excluded)."""
@@ -176,14 +186,41 @@ class Snapshot:
         return sum(self.available_kzt_minor(a) for a in accs) if accs else None
 
     @cached_property
+    def needs(self) -> list[DailyNeed]:
+        return list(self.db.scalars(select(DailyNeed).where(DailyNeed.user_id == self.user.id).order_by(DailyNeed.id)))
+
+    def _covered(self, n: DailyNeed) -> bool:
+        """The need is already a confirmed payment or an active planned item."""
+        active = {f"ob_{o.id}" for o in self.obligations if o.confirmed} | {f"pl_{p.id}" for p in self.planned}
+        return n.covered_by in active
+
+    def need_on(self, day: date) -> Fraction:
+        """Minor units needed on one day; a monthly need is spread over the days of its month."""
+        n_days = calendar.monthrange(day.year, day.month)[1]
+        return sum((Fraction(n.amount_minor, 1 if n.period == "day" else n_days)
+                    for n in self.needs if not self._covered(n)), Fraction(0))
+
+    @cached_property
+    def protected_minor(self) -> int:
+        """Money the user set aside by confirming a payout split and has not marked as done, plus the own buffer."""
+        rows = self.db.scalars(select(IncomeAllocation).where(IncomeAllocation.user_id == self.user.id,
+                                                              IncomeAllocation.status == "confirmed"))
+        return int(self.th.bufferMinor) + sum(x["amountMinor"] for r in rows for x in r.items)
+
+    def sts_monthly(self) -> list[tuple]:
+        months = rule_svc.months_ahead(self.as_of, 4)
+        return [(o.day_of_month, o.amount_minor, o.name, f"ob_{o.id}", o.ends_at,
+                 {m: self.rule_amount_minor("obligation", o.id, m) for m in months})
+                for o in self.obligations if o.confirmed]
+
+    def sts_one_off(self) -> list[sts_svc.Payment]:
+        return [sts_svc.Payment(p.due_on, self.planned_left_minor(p), p.name, f"pl_{p.id}")
+                for p in self.planned if p.direction == "expense"]
+
+    @cached_property
     def sts(self) -> sts_svc.SafeToSpend | None:
         if self.liquid_minor is None:
             return None
-        months = [self.month, month_key(self.as_of.replace(day=28) + timedelta(days=5))]
-        monthly = [(o.day_of_month, o.amount_minor, o.name, f"ob_{o.id}", o.ends_at,
-                    {m: self.rule_amount_minor("obligation", o.id, m) for m in months})
-                   for o in self.obligations if o.confirmed]
-        one_off = [sts_svc.Payment(p.due_on, self.planned_left_minor(p), p.name, f"pl_{p.id}")
-                   for p in self.planned if p.direction == "expense"]
-        return sts_svc.compute(self.as_of, self.liquid_minor, [i.day_of_month for i in self.confirmed_incomes],
-                               monthly, one_off)
+        return sts_svc.compute(self.as_of, self.liquid_minor - self.protected_minor,
+                               [i.day_of_month for i in self.confirmed_incomes], self.sts_monthly(), self.sts_one_off(),
+                               self.need_on if self.needs else None)

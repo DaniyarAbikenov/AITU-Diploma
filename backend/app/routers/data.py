@@ -88,7 +88,7 @@ def _parse_day(value: str) -> date:
 
 
 def _default_category(kind: str | None, amount_minor: int) -> str:
-    if kind == "transfer_own":
+    if kind in acc_svc.OWN_MOVES:
         return "transfers"
     if (kind or "").startswith("income") or (kind is None and amount_minor > 0):
         return "income"
@@ -117,7 +117,7 @@ def _own_account(db: Session, u: User, account_id: int) -> Account:
 def create_account(body: AccountIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
     """An account the user adds by hand (for example cash). It is confirmed by definition."""
     a = Account(user_id=u.id, bank=body.bank.strip(), name=body.name.strip(), currency=body.currency, kind=body.kind,
-                confirmed=True, balance_minor=0)
+                perimeter=body.perimeter, confirmed=True, balance_minor=0)
     _apply_availability(a, body, body.model_fields_set)
     db.add(a)
     db.flush()
@@ -132,7 +132,7 @@ def create_account(body: AccountIn, u: User = Depends(current_user), db: Session
 def update_account(account_id: int, body: AccountPatch, u: User = Depends(current_user), db: Session = Depends(get_db)):
     a = _own_account(db, u, account_id)
     for field, attr in (("bank", "bank"), ("name", "name"), ("kind", "kind"), ("currency", "currency"),
-                        ("confirmed", "confirmed")):
+                        ("confirmed", "confirmed"), ("perimeter", "perimeter")):
         value = getattr(body, field)
         if value is not None:
             setattr(a, attr, value.strip() if isinstance(value, str) and field in ("bank", "name") else value)
@@ -218,7 +218,7 @@ def create_transaction(body: TransactionIn, u: User = Depends(current_user), db:
     _category_or_422(db, category)
     t = Transaction(user_id=u.id, account_id=acc.id, booked_on=_parse_day(body.date), amount_minor=amount,
                     currency=acc.currency, merchant=body.merchant.strip(), category_id=category, category_source="user",
-                    needs_review=False, internal=body.kind == "transfer_own", user_kind=body.kind, source="manual",
+                    needs_review=False, internal=body.kind in acc_svc.OWN_MOVES, user_kind=body.kind, source="manual",
                     user_note=(body.note or "").strip() or None, dedup_key="manual-" + uuid.uuid4().hex)
     db.add(t)
     db.flush()

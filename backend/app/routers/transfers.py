@@ -48,11 +48,13 @@ def create_transfer(body: TransferIn, u: User = Depends(current_user), db: Sessi
     info = acc_svc.account_out(db, src)
     if info.balanceKnown and info.availableBalance is not None and to_minor(info.availableBalance) < out_minor:
         raise ApiError(422, "На счёте-источнике недостаточно доступных средств")
+    # business -> personal is the owner taking money out: not earned income and not a business expense
+    kind = "owner_draw" if (src.perimeter, dst.perimeter) == ("business", "personal") else "transfer_own"
     legs = []
     for acc, amount, name in ((src, -out_minor, f"Перевод на {dst.name}"), (dst, in_minor, f"Перевод с {src.name}")):
         t = Transaction(user_id=u.id, account_id=acc.id, booked_on=on, amount_minor=amount, currency=acc.currency,
                         merchant=name, category_id="transfers", category_source="user", needs_review=False,
-                        internal=True, user_kind="transfer_own", source="manual", transfer_group=group,
+                        internal=True, user_kind=kind, source="manual", transfer_group=group,
                         user_note=(body.note or "").strip() or None, dedup_key="manual-" + uuid.uuid4().hex)
         db.add(t)
         legs.append(t)
@@ -84,7 +86,9 @@ def link(body: LinkIn, u: User = Depends(current_user), db: Session = Depends(ge
     if o.account_id == i.account_id or o.amount_minor >= 0 or i.amount_minor <= 0:
         raise ApiError(422, "Нужны списание с одного счёта и зачисление на другой")
     group = f"link-{uuid.uuid4().hex[:12]}"
+    src, dst = db.get(Account, o.account_id), db.get(Account, i.account_id)
+    kind = "owner_draw" if (src.perimeter, dst.perimeter) == ("business", "personal") else "transfer_own"
     for t in pair:
-        t.internal, t.user_kind, t.needs_review, t.transfer_group = True, "transfer_own", False, group
+        t.internal, t.user_kind, t.needs_review, t.transfer_group = True, kind, False, group
     db.commit()
     return [tx_out(t) for t in pair]

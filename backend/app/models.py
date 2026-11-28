@@ -50,6 +50,8 @@ class Account(Base):
     currency: Mapped[str] = mapped_column(String(3), default="KZT")
     balance_minor: Mapped[int] = mapped_column(BigInteger, default=0)
     kind: Mapped[str | None] = mapped_column(String(20), nullable=True)  # current | savings | deposit | cash; NULL = not set
+    # personal | business (sole proprietor): business money is never mixed into personal totals (BR-03)
+    perimeter: Mapped[str] = mapped_column(String(10), default="personal", server_default="personal")
     # availability: money until `frozen_until` is the user's (counts in capital) but not available (not in the liquid
     # pool, Safe-to-Spend or reserve days). frozen_minor = the blocked part; NULL with a date = the whole balance.
     # stable link to bank statements, independent of the display name: "<bank>|*1234" (last digits of the card or
@@ -268,6 +270,42 @@ class AmountOverride(Base):
     target_id: Mapped[int] = mapped_column(Integer)
     month: Mapped[str] = mapped_column(String(7))
     amount_minor: Mapped[int] = mapped_column(BigInteger)
+
+
+class DailyNeed(Base):
+    """Everyday spending the user plans (food, transport...): per day or per month. covered_by names a payment or a
+    planned item that already contains it ("ob_5", "pl_7"), so it is not deducted twice."""
+    __tablename__ = "daily_needs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    amount_minor: Mapped[int] = mapped_column(BigInteger)
+    period: Mapped[str] = mapped_column(String(5), default="day")  # day | month
+    covered_by: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+
+class AllocationRule(Base):
+    """What the user wants to do with every salary payout, in order. Percents and sums are the user's own."""
+    __tablename__ = "allocation_rules"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    name: Mapped[str] = mapped_column(String(80))
+    kind: Mapped[str] = mapped_column(String(10))  # tax | reserve | goals
+    mode: Mapped[str] = mapped_column(String(10))  # percent | fixed
+    value: Mapped[int] = mapped_column(BigInteger)  # basis points for percent, minor units for fixed
+
+
+class IncomeAllocation(Base):
+    """The user's confirmed split of one payout. Nothing is transferred: until the user marks it done, the amounts
+    are protected (not offered for spending)."""
+    __tablename__ = "income_allocations"
+    __table_args__ = (UniqueConstraint("user_id", "transaction_id", name="uq_income_allocation"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    transaction_id: Mapped[int] = mapped_column(Integer)
+    items: Mapped[list] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(10))  # confirmed | done | skipped
 
 
 class Goal(Base):

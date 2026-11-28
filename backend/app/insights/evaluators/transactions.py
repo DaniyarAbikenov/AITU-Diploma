@@ -17,7 +17,7 @@ def r011(s: Snapshot) -> Signal:
         if len(cps) < 2:
             continue
         start, end = cps[-2], cps[-1]
-        flows = [t for t in s.transactions if t.account_id == a.id and start.as_of < s.day(t) <= end.as_of]
+        flows = [t for t in s.all_transactions if t.account_id == a.id and start.as_of < s.day(t) <= end.as_of]
         residual = end.balance_minor - (start.balance_minor + sum(s.amount(t) for t in flows))
         return Signal("R011", ready=True, triggered=abs(residual) > s.th.toleranceMinor, evidence_valid=True,
                       values={"residual": money(residual, a.currency)},
@@ -37,7 +37,8 @@ def r012(s: Snapshot) -> Signal:
         return not_ready("R012", "нет переводов между своими счетами")
     def has_pair(t) -> bool:
         return any(o is not t and o.account_id != t.account_id and s.amount(o) == -s.amount(t)
-                   and abs((s.day(o) - s.day(t)).days) <= 1 for o in own)
+                   and abs((s.day(o) - s.day(t)).days) <= 1
+                   and s.is_own_transfer(o) for o in s.all_transactions)
 
     lone = [t for t in own if not t.transfer_group and not has_pair(t)]
     total = sum(abs(s.amount(t)) for t in lone)

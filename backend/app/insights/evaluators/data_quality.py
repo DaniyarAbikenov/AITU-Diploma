@@ -57,7 +57,7 @@ def r004(s: Snapshot) -> Signal:
     """share = sum(abs(x) for uncertain expense) / sum(abs(x) for expense), last 30 days, tenge."""
     start = s.as_of - timedelta(days=30)
     exp = [t for t in s.transactions if (t.user_booked_on or t.booked_on) >= start and t.currency == "KZT"
-           and (t.user_amount_minor or t.amount_minor) < 0 and not t.internal and t.user_kind != "transfer_own"]
+           and (t.user_amount_minor or t.amount_minor) < 0 and not s.is_own_transfer(t)]
     if not exp:
         return not_ready("R004", "нет расходов за 30 дней")
     total = sum(-(t.user_amount_minor or t.amount_minor) for t in exp)

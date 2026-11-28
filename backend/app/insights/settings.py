@@ -10,6 +10,7 @@ DEFAULTS: dict[str, dict] = {
     "targetReserveMonths": {"value": 3, "label": "Целевой резерв, месяцев расходов", "unit": "months"},
     "targetRunwayDays": {"value": 30, "label": "Желаемый запас без дохода, дней", "unit": "days"},
     "debtCap": {"value": 0.4, "label": "Порог долговой нагрузки, доля дохода", "unit": "share"},
+    "bufferMinor": {"value": 0, "label": "Неприкосновенный остаток на текущих счетах, ₸", "unit": "money"},
     "toleranceMinor": {"value": 100_00, "label": "Допуск сверки остатков, ₸", "unit": "money"},
     "staleBalanceDays": {"value": 7, "label": "Остаток считается устаревшим через, дней", "unit": "days"},
     "incomeGraceDays": {"value": 3, "label": "Допуск задержки выплаты, дней", "unit": "days"},

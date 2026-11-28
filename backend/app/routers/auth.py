@@ -11,10 +11,17 @@ from app.core.security import create_token, current_user, hash_password, verify_
 from app.models import (
     Account,
     AccountCheckpoint,
+    AllocationRule,
+    AmountOverride,
+    AmountRule,
+    DailyNeed,
+    ForecastRun,
     Goal,
     ImportBatch,
+    IncomeAllocation,
     IncomeSource,
     InsightDismissal,
+    InsightState,
     MerchantRule,
     Obligation,
     PlannedPayment,
@@ -95,7 +102,8 @@ def update_me(body: ProfilePatch, u: User = Depends(current_user), db: Session =
 @router.delete("/me", response_model=Ok)
 def delete_my_data(u: User = Depends(current_user), db: Session = Depends(get_db)):
     """Right to erasure: removes every financial record of the user. The login itself is kept."""
-    for model in (PlannedSettlement, PlannedPayment, TransactionEdit, Transaction, ImportBatch, AccountCheckpoint, Account, MerchantRule, Obligation, IncomeSource, Goal, SavedScenario,
+    for model in (IncomeAllocation, AllocationRule, DailyNeed, AmountRule, AmountOverride, InsightState, ForecastRun,
+                  PlannedSettlement, PlannedPayment, TransactionEdit, Transaction, ImportBatch, AccountCheckpoint, Account, MerchantRule, Obligation, IncomeSource, Goal, SavedScenario,
                   InsightDismissal, ResilienceSnapshot):
         db.execute(delete(model).where(model.user_id == u.id))
     db.commit()

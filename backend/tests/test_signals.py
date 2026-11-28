@@ -170,6 +170,7 @@ def test_r020_currency_mismatch(w):
 def test_cashflow_r021_to_r025(w):
     assert w.sig("R021").ready is False  # unknown balance is not 0
     w.account(balance=100_000)
+    assert w.sig("R021").values["C_free"]["value_minor"] == 100_000 * K and w.sig("R021").triggered is False
     w.income(1, 400_000)  # next pay on 1 Nov: horizon 20.10–31.10 (12 days)
     w.obligation(21, 90_000)
     s = w.sig("R025")
@@ -308,20 +309,28 @@ def test_calendar_r181_r182_r183_r185_r188(we):
     we.income(10, 200_000)
     we.obligation(22, 60_000)
     assert we.sig("R181").triggered  # 60 000 due before the 25th, 50 000 available
-    assert we.sig("R182").ready
+    s = we.sig("R182")  # pays on 25 Oct and 10 Nov: after the first 50 000 − 60 000 + 250 000; needs 300 000 × 16 / 30
+    assert s.values["afterFirst"]["value_minor"] == 240_000 * K and s.triggered is False
     we.obligation(22, 30_000, name="ЖКУ", kind="utility")
     assert we.sig("R183").triggered  # two payments on one day above the money
     weekend = next(T + timedelta(days=i) for i in range(1, 8) if (T + timedelta(days=i)).weekday() >= 5)
     we.obligation(weekend.day, 5_000, name="Интернет", kind="utility")
     hits = we.sig("R185")
     assert hits.triggered and "Интернет" in hits.summary
-    assert we.sig("R188").ready
+    # carry until 10 Nov: 300 000 × 9 / 30 = 90 000; the weekend payment is added by its own date below
+    s = we.sig("R188")
+    extra = 5_000 if weekend.day < 10 else 0
+    assert s.values["carryRequired"]["value_minor"] == (90_000 + extra) * K
+    paid = 90_000 + (5_000 if weekend.month == 10 and weekend.day < 25 else 0)
+    assert s.values["projectedEnd"]["value_minor"] == (50_000 + 250_000 - paid - 120_000) * K and s.triggered  # 85 000 < 90 000
+    we.obligation(28, 20_000, name="Связь", kind="utility")  # after the payout on the 25th, still this month
+    assert we.sig("R188").values["projectedEnd"]["value_minor"] == (50_000 + 250_000 - paid - 20_000 - 120_000) * K
 
 
-def test_every_implemented_signal_is_covered_here():
+def test_every_implemented_signal_is_named_here():
     import inspect
 
-    src = inspect.getsource(inspect.getmodule(test_every_implemented_signal_is_covered_here))
+    src = inspect.getsource(inspect.getmodule(test_every_implemented_signal_is_named_here))
     missing = [sid for sid in REGISTRY if sid not in src]
     assert missing == [], missing
 

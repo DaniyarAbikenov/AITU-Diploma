@@ -74,7 +74,7 @@ def clamp_day(year: int, month: int, day: int) -> int:
 
 
 def build_context(db: Session, user: User, as_of: date) -> Context:
-    accounts = db.scalars(select(Account).where(Account.user_id == user.id)).all()
+    accounts = db.scalars(select(Account).where(Account.user_id == user.id, Account.perimeter == "personal")).all()
     obligations = [
         Ob(o.name, o.kind, _rule_amount(db, user, o, as_of), o.day_of_month, o.ends_at)
         for o in db.scalars(select(Obligation).where(Obligation.user_id == user.id, Obligation.rejected.is_(False)))

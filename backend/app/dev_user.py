@@ -17,10 +17,17 @@ from app.core.security import hash_password
 from app.models import (
     Account,
     AccountCheckpoint,
+    AllocationRule,
+    AmountOverride,
+    AmountRule,
+    DailyNeed,
+    ForecastRun,
     Goal,
     ImportBatch,
+    IncomeAllocation,
     IncomeSource,
     InsightDismissal,
+    InsightState,
     MerchantRule,
     Obligation,
     PlannedPayment,
@@ -41,7 +48,8 @@ TEST_NAME = "Тестовый пользователь"
 
 
 def _wipe(db, user: User) -> None:
-    for model in (PlannedSettlement, PlannedPayment, TransactionEdit, Transaction, ImportBatch, AccountCheckpoint, Account, MerchantRule, Obligation, IncomeSource, Goal,
+    for model in (IncomeAllocation, AllocationRule, DailyNeed, AmountRule, AmountOverride, InsightState, ForecastRun,
+                  PlannedSettlement, PlannedPayment, TransactionEdit, Transaction, ImportBatch, AccountCheckpoint, Account, MerchantRule, Obligation, IncomeSource, Goal,
                   SavedScenario, InsightDismissal, ResilienceSnapshot):
         db.execute(delete(model).where(model.user_id == user.id))
     db.commit()

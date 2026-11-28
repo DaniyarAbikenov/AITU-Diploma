@@ -56,8 +56,9 @@ class Ok(BaseModel):
 
 # ---- accounts / transactions
 AccountKind = Literal["current", "savings", "deposit", "cash"]
+Perimeter = Literal["personal", "business"]
 Early = Literal["yes", "no", "lose_interest"]
-TxKind = Literal["expense", "income", "income_salary", "income_other", "income_interest", "transfer_own",
+TxKind = Literal["expense", "income", "income_salary", "income_other", "income_interest", "transfer_own", "owner_draw",
                  "transfer_third_party"]
 
 
@@ -92,6 +93,7 @@ class AccountOut(BaseModel):
     availableKzt: int | float | None = None
     interestRate: float | None = None
     earlyWithdrawal: Early | None = None
+    perimeter: Perimeter = "personal"
     numberMask: str | None = None  # last digits of the card/account number from statements
 
 
@@ -99,6 +101,7 @@ class AccountIn(BaseModel):
     bank: str = Field(min_length=1, max_length=80)
     name: str = Field(min_length=1, max_length=120)
     kind: AccountKind
+    perimeter: Perimeter = "personal"
     currency: Currency = "KZT"
     frozenUntil: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     frozenAmount: float | None = Field(default=None, ge=0, le=1e12)
@@ -115,6 +118,7 @@ class AccountPatch(BaseModel):
     kind: AccountKind | None = None
     currency: Currency | None = None
     confirmed: bool | None = None
+    perimeter: Perimeter | None = None
     frozenUntil: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     frozenAmount: float | None = Field(default=None, ge=0, le=1e12)
     interestRate: float | None = Field(default=None, ge=0, le=100)

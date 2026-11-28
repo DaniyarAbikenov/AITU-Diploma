@@ -126,7 +126,11 @@ def r188(s: Snapshot) -> Signal:
     carry += s.essential_minor * (first_pay - nxt).days // 30
     month_end = monthly_date(s.as_of.year, s.as_of.month, 31)
     rest_days = (month_end - s.as_of).days + 1
-    this_month_pay = sum(p.amount_minor for p in s.sts.payments if p.due <= month_end)
+    # every payment to the month end, also those after the next payout (the spending horizon stops before it)
+    this_month_pay = sum(s.obligation_month_minor(o, s.month) for o in s.obligations if o.confirmed
+                         and s.as_of <= monthly_date(s.as_of.year, s.as_of.month, o.day_of_month)
+                         and (not o.ends_at or o.ends_at >= s.month))
+    this_month_pay += sum(p.amount_minor for p in s.sts_one_off() if p.due <= month_end)
     income_left = sum(i.amount_min_minor or i.amount_minor for i in s.confirmed_incomes
                       if s.as_of < monthly_date(s.as_of.year, s.as_of.month, i.day_of_month) <= month_end)
     end_free = s.liquid_minor + income_left - this_month_pay - s.essential_minor * rest_days // 30

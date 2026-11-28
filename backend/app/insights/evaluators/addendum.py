@@ -33,6 +33,10 @@ def a002(s: Snapshot) -> Signal:
     from app.insights.evaluators.debts_reserve import r092
     from app.insights.evaluators.goals_events import r102
     from app.insights.evaluators.plan import r042
+    from app.services.money_plan import set_aside
+
+    if set_aside(s)["amountMinor"] is not None:  # the overview already offers the same free money
+        return Signal("A002", ready=True, triggered=False, evidence_valid=True, period=s.month, root_cause="surplus_use")
 
     plan = r042(s)
     if not plan.ready:
