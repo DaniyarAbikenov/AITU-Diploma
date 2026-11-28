@@ -29,7 +29,25 @@ export const api = {
   navigator: async () => readNavigator(),
   updateNavigator: async (action: NavigatorAction) => mutateNavigator(action),
   resetNavigator: async () => resetNavigator(),
+  me: () => call<T.User>("/me", () => m.db.me),
+  updateMe: (patch: T.ProfilePatch) => call<T.User>("/me", () => Object.assign(m.db.me, patch), body("PATCH", patch)),
   accounts: () => call<T.Account[]>("/accounts", () => m.accounts),
+  createAccount: (a: T.AccountIn) => call<T.Account>("/accounts", () => m.createAccount(a), body("POST", a)),
+  updateAccount: (id: string, patch: Partial<Pick<T.Account, "bank" | "name" | "kind" | "confirmed">>) =>
+    call<T.Account>("/accounts/" + id, () => Object.assign(m.accounts.find((a) => a.id === id)!, patch), body("PATCH", patch)),
+  addCheckpoint: (id: string, cp: { balance: number; asOf: string; source?: "manual" | "statement" }) =>
+    call<T.Account>(`/accounts/${id}/checkpoints`, () => m.addCheckpoint(id, cp), body("POST", cp)),
+  transactionsFor: (f: T.TxQuery) => {
+    const p = new URLSearchParams();
+    if (f.from) p.set("date_from", f.from);
+    if (f.to) p.set("date_to", f.to);
+    if (f.account) p.set("account", f.account);
+    if (f.bank) p.set("bank", f.bank);
+    if (f.q) p.set("q", f.q);
+    return call<T.Transaction[]>("/transactions?" + p, () => m.filterTransactions(f));
+  },
+  setTxKind: (id: string, kind: T.TxKind | null, saveRule = false) =>
+    call<T.Transaction>(`/transactions/${id}/kind`, () => m.setTxKind(id, kind, saveRule), body("PATCH", { kind, saveRule })),
   categories: () => call<T.Category[]>("/categories", () => m.categories),
   transactions: () => call<T.Transaction[]>("/transactions", () => m.db.transactions),
   recategorize: (id: string, categoryId: string) => call("/transactions/" + id, () => {
@@ -53,9 +71,14 @@ export const api = {
   dismissInsight: (id: string) => call(`/insights/${id}/dismiss`, () => { m.db.dismissed.add(id); return { ok: true }; }, { method: "POST" }),
   obligations: () => call<T.Obligation[]>("/obligations", () => m.db.obligations),
   confirmObligation: (id: string, confirmed: boolean) => call("/obligations/" + id, () => { const o = m.db.obligations.find((x) => x.id === id); if (o) o.confirmed = confirmed; return o; }, body("PATCH", { confirmed })),
+  decideObligation: (id: string, d: T.Decision) => call<T.Obligation>("/obligations/" + id, () => m.decide(m.db.obligations, id, d), body("PATCH", d)),
   calendar: () => call<T.ObligationsCalendar>("/obligations/calendar?months=12", m.calendar),
   dti: () => call<T.DtiPoint[]>("/obligations/dti-history", m.dtiHistory),
   income: () => call<T.IncomeSource[]>("/income-sources", () => m.db.income),
+  decideIncome: (id: string, d: T.Decision) => call<T.IncomeSource>("/income-sources/" + id, () => m.decide(m.db.income, id, d), body("PATCH", d)),
+  addIncome: (i: T.IncomeIn) => call<T.IncomeSource>("/income-sources", () => { const n = { ...i, id: "i" + Date.now(), confirmed: true, rejected: false }; m.db.income.push(n); return n; }, body("POST", i)),
+  updateIncome: (id: string, patch: Partial<T.IncomeIn>) => call<T.IncomeSource>("/income-sources/" + id, () => Object.assign(m.db.income.find((x) => x.id === id)!, patch), body("PATCH", patch)),
+  deleteIncome: (id: string) => call("/income-sources/" + id, () => { m.db.income = m.db.income.filter((x) => x.id !== id); return { ok: true }; }, { method: "DELETE" }),
   confirmIncome: (id: string, confirmed: boolean) => call("/income-sources/" + id, () => { const o = m.db.income.find((x) => x.id === id); if (o) o.confirmed = confirmed; return o; }, body("PATCH", { confirmed })),
   resilience: () => call<T.Resilience>("/resilience", m.resilience),
   resilienceHistory: () => call<{ month: string; score: number }[]>("/resilience/history", m.resilienceHistory),
@@ -74,7 +97,9 @@ export const api = {
 
 export const q = {
   navigator: queryOptions({ queryKey: ["navigator"], queryFn: api.navigator, enabled: typeof window !== "undefined", retry: false }),
+  me: queryOptions({ queryKey: ["me"], queryFn: api.me }),
   accounts: queryOptions({ queryKey: ["accounts"], queryFn: api.accounts }),
+  transactionsFor: (f: T.TxQuery) => queryOptions({ queryKey: ["transactions", f], queryFn: () => api.transactionsFor(f) }),
   categories: queryOptions({ queryKey: ["categories"], queryFn: api.categories, staleTime: Infinity }),
   transactions: queryOptions({ queryKey: ["transactions"], queryFn: api.transactions }),
   rules: queryOptions({ queryKey: ["rules"], queryFn: api.rules }),

@@ -3,14 +3,31 @@
 
 export type Status = "ok" | "warn" | "risk";
 
-export interface User { id: string; email: string; name: string; city: string; currency: "KZT" }
-export interface Account { id: string; bank: string; name: string; currency: "KZT" | "USD"; balance: number }
+export interface User {
+  id: string; email: string; name: string; city: string; currency: "KZT";
+  /** IANA zone, Asia/Almaty by default. Plan fields: null = not provided yet (never read as 0). */
+  timezone?: string; plannedIncome?: number | null; essentialExpenses?: number | null; workHours?: number | null;
+}
+export type ProfilePatch = Partial<Pick<User, "name" | "city" | "timezone" | "plannedIncome" | "essentialExpenses" | "workHours">>;
+export type AccountKind = "current" | "savings" | "cash";
+export interface Account {
+  id: string; bank: string; name: string; currency: "KZT" | "USD"; balance: number;
+  kind?: AccountKind | null; confirmed?: boolean;
+  /** false: no checkpoint or statement balance, `balance` is a placeholder and must not be shown as 0. */
+  balanceKnown?: boolean; balanceAsOf?: string | null; balanceSource?: "manual" | "statement" | null;
+}
+export interface AccountIn { bank: string; name: string; kind: AccountKind; currency?: "KZT" | "USD"; balance?: number | null; balanceAsOf?: string | null }
+export interface Checkpoint { id: string; accountId: string; balance: number; asOf: string; source: "manual" | "statement" }
+export type TxKind = "expense" | "income" | "income_salary" | "income_other" | "transfer_own" | "transfer_third_party";
 
 export interface Category { id: string; name: string; color: string }
 export interface Transaction {
   id: string; date: string; amount: number; currency: "KZT" | "USD";
   merchant: string; categoryId: string; accountId: string; needsReview: boolean; internal?: boolean;
+  /** Effective type: the user's decision when kindSource = "user", otherwise derived from the import. */
+  kind?: TxKind; kindSource?: "user" | "auto";
 }
+export interface TxQuery { from?: string; to?: string; account?: string; bank?: string; q?: string }
 
 export interface ImportReport { id: string; status: "processing" | "done" | "failed"; parsed: number; needsReview: number; period: { from: string; to: string }; bank: string; warnings?: string[] }
 
@@ -30,11 +47,17 @@ export interface DashboardSummary { month: string; income: number; expense: numb
 
 export interface Insight { id: string; status: Status; title: string; why: string; action: string; to: string }
 
-export interface Obligation { id: string; name: string; kind: "credit" | "installment" | "rent" | "subscription" | "utility"; amount: number; dayOfMonth: number; endsAt?: string; confirmed: boolean }
+export interface Obligation { id: string; name: string; kind: "credit" | "installment" | "rent" | "subscription" | "utility"; amount: number; dayOfMonth: number; endsAt?: string | null; confirmed: boolean; rejected?: boolean }
+export type Decision = { confirmed?: boolean; rejected?: boolean };
 export interface ObligationsCalendar { months: { month: string; credit: number; installment: number; regular: number }[]; income: number }
 export interface DtiPoint { month: string; dti: number }
 
-export interface IncomeSource { id: string; name: string; amount: number; dayOfMonth: number; confirmed: boolean }
+export interface IncomeSource {
+  id: string; name: string; amount: number; dayOfMonth: number; confirmed: boolean; rejected?: boolean;
+  /** Payout varies: cautious plans use amountMin (FR-29). */
+  amountMin?: number | null; amountMax?: number | null;
+}
+export type IncomeIn = Pick<IncomeSource, "name" | "amount" | "dayOfMonth"> & { amountMin?: number | null; amountMax?: number | null };
 
 export interface ResilienceComponent { key: string; name: string; status: Status; value: string; explain: string; action: string }
 export interface Resilience extends Forecasted { score: number; pShortfall: number; runwayMonths: number; components: ResilienceComponent[] }

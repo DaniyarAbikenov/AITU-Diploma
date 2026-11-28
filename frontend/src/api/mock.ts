@@ -2,7 +2,7 @@
 import type {
   Account, BalancePoint, Category, CityPrice, DashboardSummary, DtiPoint, Goal, GoalProjection, ImportReport, IncomeSource,
   Insight, MacroIndicator, MerchantRule, MonthEndForecast, BalanceForecast, Obligation, ObligationsCalendar, PersonalInflation,
-  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction,
+  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction, User, AccountIn, TxKind, TxQuery, Decision,
 } from "./types";
 
 export const AS_OF = "2026-10-19";
@@ -87,7 +87,43 @@ export const db = {
   ] as Goal[],
   scenarios: [] as SavedScenario[],
   dismissed: new Set<string>(),
+  me: { id: "u1", email: "mock@example.com", name: "Айгерим", city: "Алматы", currency: "KZT", timezone: "Asia/Almaty", plannedIncome: null, essentialExpenses: null, workHours: null } as User,
 };
+
+export function createAccount(a: AccountIn): Account {
+  const acc: Account = { id: "acc-" + Date.now(), bank: a.bank, name: a.name, kind: a.kind, currency: a.currency ?? "KZT", balance: a.balance ?? 0,
+    confirmed: true, balanceKnown: a.balance != null, balanceAsOf: a.balance != null ? a.balanceAsOf ?? AS_OF : null, balanceSource: a.balance != null ? "manual" : null };
+  accounts.push(acc);
+  return acc;
+}
+export function addCheckpoint(id: string, cp: { balance: number; asOf: string; source?: "manual" | "statement" }): Account {
+  const acc = accounts.find((a) => a.id === id)!;
+  return Object.assign(acc, { balance: cp.balance, balanceKnown: true, balanceAsOf: cp.asOf, balanceSource: cp.source ?? "manual", confirmed: true });
+}
+const autoKind = (t: Transaction): TxKind => (t.internal ? "transfer_own" : t.amount > 0 ? "income" : "expense");
+export function filterTransactions(f: TxQuery): Transaction[] {
+  const bankOf = (id: string) => accounts.find((a) => a.id === id)?.bank;
+  return db.transactions
+    .filter((t) => (!f.from || t.date >= f.from) && (!f.to || t.date <= f.to) && (!f.account || t.accountId === f.account)
+      && (!f.bank || bankOf(t.accountId) === f.bank) && (!f.q || t.merchant.toLowerCase().includes(f.q.toLowerCase())))
+    .map((t) => ({ ...t, kind: t.kind ?? autoKind(t), kindSource: t.kindSource ?? "auto" }));
+}
+export function setTxKind(id: string, kind: TxKind | null, saveRule: boolean): Transaction {
+  const t = db.transactions.find((x) => x.id === id)!;
+  const targets = saveRule ? db.transactions.filter((x) => x.merchant === t.merchant) : [t];
+  for (const x of targets) Object.assign(x, kind ? { kind, kindSource: "user" } : { kind: autoKind({ ...x, kind: undefined }), kindSource: "auto" });
+  return t;
+}
+export function decide<R extends { id: string; confirmed: boolean; rejected?: boolean }>(rows: R[], id: string, d: Decision): R {
+  const r = rows.find((x) => x.id === id)!;
+  if (d.rejected) Object.assign(r, { rejected: true, confirmed: false });
+  else if (d.confirmed) Object.assign(r, { confirmed: true, rejected: false });
+  else {
+    if (d.confirmed === false) r.confirmed = false;
+    if (d.rejected === false) r.rejected = false;
+  }
+  return r;
+}
 
 export function monthKey(isoDate: string) { return isoDate.slice(0, 7); }
 

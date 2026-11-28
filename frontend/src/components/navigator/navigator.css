@@ -1730,3 +1730,121 @@
     gap: 7px;
   }
 }
+
+/* ---- modes (FR-01) and working-mode blocks */
+.nav-mode-switch {
+  display: inline-flex;
+  border: 1px solid #dfe7e2;
+  border-radius: 8px;
+  padding: 2px;
+  background: #f6f9f7;
+}
+.nav-mode-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: #5f7468;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.nav-mode-switch button.active {
+  background: #fff;
+  color: #1f5a43;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+.nav-mode-label-live {
+  color: #8a5a12;
+  background: #fdf3e2;
+  border-color: #f1e0c2;
+}
+.nav-note {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: #f4f7f5;
+  border: 1px dashed #cfdcd4;
+  color: #4d6357;
+  margin: 10px 0;
+}
+.nav-note p {
+  margin: 0 0 6px;
+}
+.nav-note button {
+  margin-top: 4px;
+}
+.nav-pill {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: #eef3f0;
+  color: #557264;
+}
+.nav-pill.warn {
+  background: #fcf4df;
+  color: #806a29;
+}
+.nav-pill.ok {
+  background: #e5f3ec;
+  color: #1f6a4b;
+}
+.nav-pill.off {
+  background: #f3eeee;
+  color: #8a5b53;
+}
+.nav-live-list {
+  display: grid;
+  gap: 10px;
+}
+.nav-live-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid #edf1ee;
+  flex-wrap: wrap;
+}
+.nav-live-row:last-child {
+  border-bottom: 0;
+}
+.nav-live-row > div:first-child {
+  min-width: 0;
+  flex: 1 1 220px;
+}
+.nav-live-row .nav-actions button {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.nav-checkbox {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+}
+.nav-checkbox input {
+  width: auto;
+  margin-top: 4px;
+}
+.nav-calendar .pending-event b {
+  opacity: 0.6;
+}
+@media (max-width: 760px) {
+  .nav-mode-switch button {
+    padding: 4px 7px;
+  }
+  .nav-mode-switch button svg {
+    display: none;
+  }
+  .nav-topbar .nav-breadcrumb {
+    display: none;
+  }
+}
