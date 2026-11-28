@@ -4,11 +4,13 @@ import { api } from "@/api/client";
 import type { Account, Decision, IncomeSource, Obligation, PlannedPayment } from "@/api/types";
 import { ru } from "@/i18n/ru";
 import { formatDay } from "@/lib/navigator-live";
+import { todayIn } from "@/lib/safe-to-spend";
 import { compact, money } from "../model";
 import { Panel } from "../shared";
 import { Missing } from "./common";
 import { ObligationDialog, PlannedDialog, SettleDialog, FormError } from "./forms";
 import { confirmed, useWrite } from "./hooks";
+import { RuleLine } from "./RuleEditor";
 
 const t = ru.live.calendar;
 const p = ru.crud.payments;
@@ -62,6 +64,37 @@ function DecisionButtons({
   );
 }
 
+/** The user's own amount for the current month, over the rule (empty = back to the rule). */
+function MonthOverride({ id, notify }: { id: string; notify: (m: string) => void }) {
+  const month = todayIn().slice(0, 7);
+  const save = useWrite(
+    (amount: number | null) => api.setOverride("obligation", id, month, amount),
+    () => notify(ru.crud.saved),
+  );
+  return (
+    <details className="nav-small">
+      <summary>{ru.rules.monthAmount}</summary>
+      <form
+        className="nav-actions"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const v = String(new FormData(e.currentTarget).get("amount") ?? "").trim();
+          save.mutate(v === "" ? null : Number(v));
+        }}
+      >
+        <label className="nav-field">
+          {ru.rules.monthAmountField(month)}
+          <input name="amount" type="number" min={0} step={1} />
+        </label>
+        <button className="nav-secondary" disabled={save.isPending}>
+          {ru.common.save}
+        </button>
+      </form>
+      <FormError error={save.error} />
+    </details>
+  );
+}
+
 /** Monthly obligations: confirm / reject detected ones, add, edit and delete (Calendar and Profile). */
 export function ObligationsPanel({
   obligations,
@@ -91,8 +124,14 @@ export function ObligationsPanel({
           {o.endsAt ? ` · до ${o.endsAt}` : ""}
           {o.debtLeft != null ? ` · остаток долга ${money(o.debtLeft)}` : ""}
         </p>
+        <RuleLine rule={o.rule} />
+        {o.rule && <MonthOverride id={o.id} notify={notify} />}
       </div>
-      <strong>−{money(o.amount)}</strong>
+      <strong>
+        {o.rule && o.rule.amountThisMonth == null
+          ? "—"
+          : `−${money(o.rule?.amountThisMonth ?? o.amount)}`}
+      </strong>
       <div className="nav-actions">
         <DecisionButtons
           r={o}
@@ -268,6 +307,7 @@ export function PlannedPanel({
                     {x.movable ? ` · ${p.movable.toLowerCase()}` : ""}
                     {x.status === "partial" ? ` · ${p.left(money(x.left))}` : ""}
                   </p>
+                  <RuleLine rule={x.rule} />
                   {overdue && <p className="nav-small nav-danger">{p.overdue}</p>}
                 </div>
                 <strong className={x.direction === "income" ? "nav-positive" : ""}>

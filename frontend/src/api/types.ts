@@ -55,6 +55,8 @@ export interface PlannedPayment {
   repeat: "once" | "yearly"; categoryId?: string | null; accountId?: string | null; mandatory: boolean; movable: boolean;
   status: "planned" | "partial" | "paid" | "cancelled"; paid: number; left: number;
   settlements: { transactionId: string; amount: number; period: string }[];
+  /** The entered amount when a rule computes `amount`. */
+  baseAmount?: number | null; rule?: RuleInfo | null;
 }
 export type PlannedIn = Pick<PlannedPayment, "name" | "direction" | "amount" | "dueOn" | "repeat" | "mandatory" | "movable"> & { dueTo?: string | null; category?: string | null; accountId?: string | null };
 export type PlannedPatch = Partial<PlannedIn> & { cancelled?: boolean };
@@ -86,7 +88,16 @@ export interface DashboardSummary { month: string; income: number; expense: numb
 
 export interface Insight { id: string; status: Status; title: string; why: string; action: string; to: string }
 
-export interface Obligation { id: string; name: string; kind: "credit" | "installment" | "rent" | "subscription" | "utility"; amount: number; dayOfMonth: number; endsAt?: string | null; confirmed: boolean; rejected?: boolean; categoryId?: string | null; debtLeft?: number | null }
+export type RuleKind = "per_day" | "percent_income" | "percent_of" | "fixed_plus" | "formula";
+export interface RuleIn { kind: RuleKind; params: Record<string, string | number>; expression?: string | null }
+/** How an amount is computed; amounts are null when an input is unknown (never 0). */
+export interface RuleInfo {
+  kind: RuleKind; params: Record<string, string | number>; expression: string; validFrom: string;
+  amountThisMonth: number | null; explanation: string; estimate: boolean; overridden?: boolean; missing?: string | null;
+  amountsByMonth: Record<string, number | null>;
+}
+export interface RulePreview { amount?: number | null; explanation?: string | null; estimate?: boolean; missing?: string | null; expression?: string | null; error?: string | null; errorPos?: number | null }
+export interface Obligation { rule?: RuleInfo | null; id: string; name: string; kind: "credit" | "installment" | "rent" | "subscription" | "utility"; amount: number; dayOfMonth: number; endsAt?: string | null; confirmed: boolean; rejected?: boolean; categoryId?: string | null; debtLeft?: number | null }
 export type ObligationIn = Pick<Obligation, "name" | "kind" | "amount" | "dayOfMonth"> & { endsAt?: string | null; category?: string | null; debtLeft?: number | null };
 export type Decision = { confirmed?: boolean; rejected?: boolean };
 export interface ObligationsCalendar { months: { month: string; credit: number; installment: number; regular: number }[]; income: number }

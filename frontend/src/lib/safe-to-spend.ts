@@ -88,7 +88,14 @@ export function safeToSpend(input: {
   /** Days of month of confirmed incomes (several payouts a month are allowed). */
   incomeDays: number[];
   /** Confirmed monthly payments. */
-  payments: { dayOfMonth: number; amount: number; name?: string; endsAt?: string | null }[];
+  /** amountsByMonth: amounts computed by a rule per YYYY-MM (null = not computed: the entered amount is used). */
+  payments: {
+    dayOfMonth: number;
+    amount: number;
+    name?: string;
+    endsAt?: string | null;
+    amountsByMonth?: Record<string, number | null>;
+  }[];
   /** One-off planned expenses (the unpaid part). An overdue one is due today. */
   oneOff?: Payment[];
 }): SafeToSpend {
@@ -105,8 +112,9 @@ export function safeToSpend(input: {
     let d = nextMonthly(today, p.dayOfMonth);
     while (d <= until) {
       if (!p.endsAt || d.slice(0, 7) <= p.endsAt) {
-        due[daysBetween(today, d)] += p.amount;
-        inside.push({ date: d, amount: p.amount, name: p.name });
+        const amount = p.amountsByMonth?.[d.slice(0, 7)] ?? p.amount;
+        due[daysBetween(today, d)] += amount;
+        inside.push({ date: d, amount, name: p.name });
       }
       d = nextMonthly(addDays(d, 1), p.dayOfMonth);
     }

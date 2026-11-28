@@ -2,7 +2,7 @@
 import type {
   Account, BalancePoint, Category, CityPrice, DashboardSummary, DtiPoint, Goal, GoalProjection, ImportReport, IncomeSource,
   Insight, MacroIndicator, MerchantRule, MonthEndForecast, BalanceForecast, Obligation, ObligationsCalendar, PersonalInflation,
-  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction, User, AccountIn, TxKind, TxQuery, Decision, ImportPreview, Rates, TransactionIn, TransferIn, TransactionPatch, PlannedPayment, PlannedIn, PlannedPatch, SettleIn,
+  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction, User, AccountIn, TxKind, TxQuery, Decision, ImportPreview, RuleIn, RuleInfo, RulePreview, Rates, TransactionIn, TransferIn, TransactionPatch, PlannedPayment, PlannedIn, PlannedPatch, SettleIn,
 } from "./types";
 
 export const AS_OF = "2026-10-19";
@@ -363,4 +363,30 @@ export function fakePreview(bank: string): ImportPreview {
   return { bank, accountName: "Kaspi Gold", numberMask: null, currency: "KZT", periodFrom: "2026-09-01", periodTo: "2026-09-30", operations: 42,
     closingBalance: 120000, suggestedAccountId: accounts[0]?.id ?? null, matchedBy: "name", needsChoice: true,
     accounts: accounts.map((a) => ({ id: a.id, bank: a.bank, name: a.name, currency: a.currency, numberMask: a.numberMask ?? null })) };
+}
+
+export const ruleVariables = [
+  { name: "days_in_month", description: "дней в месяце (28–31)" },
+  { name: "income_min", description: "осторожный доход" },
+];
+/** Mock evaluation of the two common rules (the real parser is on the server). */
+export function rulePreview(r: RuleIn): RulePreview {
+  const days = 30;
+  if (r.kind === "per_day") { const a = Number(r.params.perDay) * days; return { amount: a, explanation: `${r.params.perDay} ₸ × ${days} дн. = ${a} ₸`, estimate: false }; }
+  if (r.kind === "percent_income") return { amount: null, explanation: "не рассчитано: нужен подтверждённый доход", missing: "income_min", estimate: true };
+  if (r.kind === "formula" && /[^\w\s+\-*/().,;×÷]/.test(r.expression ?? "")) return { error: "недопустимый символ", errorPos: 0 };
+  return { amount: 0, explanation: r.expression ?? "", estimate: false };
+}
+export function setRule(type: string, id: string, r: RuleIn): RuleInfo {
+  const p = rulePreview(r);
+  const info: RuleInfo = { kind: r.kind, params: r.params, expression: r.expression ?? "", validFrom: AS_OF.slice(0, 7), amountThisMonth: p.amount ?? null,
+    explanation: p.explanation ?? "", estimate: !!p.estimate, missing: p.missing ?? null, amountsByMonth: { [AS_OF.slice(0, 7)]: p.amount ?? null } };
+  const row = type === "obligation" ? db.obligations.find((o) => o.id === id) : db.planned.find((x) => x.id === id);
+  if (row) row.rule = info;
+  return info;
+}
+export function deleteAmountRule(type: string, id: string) {
+  const row = type === "obligation" ? db.obligations.find((o) => o.id === id) : db.planned.find((x) => x.id === id);
+  if (row) row.rule = null;
+  return { ok: true };
 }

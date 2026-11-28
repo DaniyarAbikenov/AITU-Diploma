@@ -89,6 +89,12 @@ export const api = {
   addObligation: (o: T.ObligationIn) => call<T.Obligation>("/obligations", () => { const n = { ...o, id: "o" + Date.now(), confirmed: true, rejected: false, categoryId: o.category ?? null }; m.db.obligations.push(n); return n; }, body("POST", o)),
   updateObligation: (id: string, patch: Partial<T.ObligationIn>) => call<T.Obligation>("/obligations/" + id, () => Object.assign(m.db.obligations.find((x) => x.id === id)!, patch), body("PATCH", patch)),
   deleteObligation: (id: string) => call("/obligations/" + id, () => { m.db.obligations = m.db.obligations.filter((x) => x.id !== id); return { ok: true }; }, { method: "DELETE" }),
+  ruleVariables: () => call<{ name: string; description: string }[]>("/rules/variables", () => m.ruleVariables),
+  rulePreview: (r: T.RuleIn & { month?: string }) => call<T.RulePreview>("/rules/preview", () => m.rulePreview(r), body("POST", r)),
+  setRule: (type: "obligation" | "planned", id: string, r: T.RuleIn) => call<T.RuleInfo>(`/rules/${type}/${id}`, () => m.setRule(type, id, r), body("PUT", r)),
+  deleteAmountRule: (type: "obligation" | "planned", id: string) => call(`/rules/${type}/${id}`, () => m.deleteAmountRule(type, id), { method: "DELETE" }),
+  setOverride: (type: "obligation" | "planned", id: string, month: string, amount: number | null) =>
+    call(`/overrides/${type}/${id}/${month}`, () => ({ ok: true }), body("PUT", { amount })),
   planned: () => call<T.PlannedPayment[]>("/planned-payments", () => m.db.planned),
   addPlanned: (p: T.PlannedIn) => call<T.PlannedPayment>("/planned-payments", () => m.addPlanned(p), body("POST", p)),
   updatePlanned: (id: string, patch: T.PlannedPatch) => call<T.PlannedPayment>("/planned-payments/" + id, () => m.updatePlanned(id, patch), body("PATCH", patch)),
@@ -146,6 +152,7 @@ export const q = {
   cityPrices: (city: string) => queryOptions({ queryKey: ["cityPrices", city], queryFn: () => api.cityPrices(city) }),
   goals: queryOptions({ queryKey: ["goals"], queryFn: api.goals }),
   transferCandidates: queryOptions({ queryKey: ["transactions", "candidates"], queryFn: api.transferCandidates }),
+  ruleVariables: queryOptions({ queryKey: ["ruleVariables"], queryFn: api.ruleVariables, staleTime: Infinity }),
   planned: queryOptions({ queryKey: ["planned"], queryFn: api.planned }),
   txHistory: (id: string) => queryOptions({ queryKey: ["txHistory", id], queryFn: () => api.txHistory(id) }),
 };

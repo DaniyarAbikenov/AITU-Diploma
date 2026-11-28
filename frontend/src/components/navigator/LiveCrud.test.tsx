@@ -200,3 +200,34 @@ describe("statement import", () => {
     await waitFor(() => expect(spy).toHaveBeenCalledWith("Kaspi Bank", expect.any(File), "new"));
   });
 });
+
+describe("amount rules", () => {
+  it("sets «food 5 000 a day» on an obligation and shows the formula", async () => {
+    await open("Календарь");
+    fireEvent.click((await screen.findAllByRole("button", { name: "Добавить платёж" }))[0]);
+    const d = within(dialog());
+    fireEvent.change(d.getByLabelText("Название"), { target: { value: "Питание" } });
+    fireEvent.change(d.getByLabelText("Сумма, ₸"), { target: { value: "150000" } });
+    fireEvent.change(d.getByLabelText("День месяца"), { target: { value: "1" } });
+    fireEvent.click(d.getByRole("button", { name: "Рассчитывать по правилу" }));
+    expect(d.getByLabelText("Сумма, если правило не рассчитается, ₸")).toBeInTheDocument();
+    fireEvent.click(d.getByRole("button", { name: "Питание 5 000 ₸ в день" }));
+    expect(await d.findByText(/Сейчас: 5000 ₸ × 30 дн\./)).toBeInTheDocument();
+    fireEvent.click(d.getByRole("button", { name: "Сохранить" }));
+    await waitFor(() =>
+      expect(db.obligations.find((o) => o.name === "Питание")?.rule?.kind).toBe("per_day"),
+    );
+    expect((await screen.findAllByText(/по правилу: 5000 ₸ × 30 дн\./)).length).toBeGreaterThan(0);
+  });
+  it("shows a formula error instead of saving a wrong amount", async () => {
+    await open("Календарь");
+    fireEvent.click(
+      (await screen.findAllByRole("button", { name: "Добавить плановую статью" }))[0],
+    );
+    const d = within(dialog());
+    fireEvent.click(d.getByRole("button", { name: "Рассчитывать по правилу" }));
+    fireEvent.change(d.getByLabelText("Правило"), { target: { value: "formula" } });
+    fireEvent.change(d.getByLabelText("Формула"), { target: { value: "5000 # days" } });
+    expect(await d.findByText(/Ошибка в формуле/)).toBeInTheDocument();
+  });
+});

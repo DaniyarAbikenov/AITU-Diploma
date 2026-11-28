@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { confirmed, useWrite } from "./hooks";
+import { RuleEditor } from "./RuleEditor";
+import { ruleStateFrom, type RuleState } from "./rule-state";
 import { api, q } from "@/api/client";
 import type {
   Account,
@@ -29,6 +31,17 @@ const OB_KINDS = Object.keys(ru.obligationKind) as Obligation["kind"][];
 const num = (v: FormDataEntryValue | null) =>
   v === null || String(v).trim() === "" ? null : Number(v);
 const str = (v: FormDataEntryValue | null) => (v === null ? "" : String(v).trim());
+
+/** After the item is saved: store its rule, or remove the rule it had when the user switched to a fixed amount. */
+async function applyRule(
+  type: "obligation" | "planned",
+  id: string,
+  state: RuleState,
+  had: boolean,
+) {
+  if (state.on) await api.setRule(type, id, state.rule);
+  else if (had) await api.deleteAmountRule(type, id);
+}
 
 export function FormError({ error }: { error: Error | null | undefined | string }) {
   if (!error) return null;
@@ -370,8 +383,13 @@ export function ObligationDialog({
   const p = c.payments;
   const current = value && value !== "new" ? value : null;
   const [period, setPeriod] = useState<"monthly" | "once" | "yearly">("monthly");
+  const [rule, setRule] = useState<RuleState>(() => ruleStateFrom(current?.rule));
+  const obs = useQuery(q.obligations);
+  const pls = useQuery(q.planned);
   const save = useWrite(
-    (f: FormData): Promise<unknown> => {
+    async (f: FormData): Promise<unknown> => {
+      if (!rule.on && current?.rule && !confirmed(ru.rules.removeConfirm))
+        throw new Error(ru.common.cancel);
       const category = str(f.get("category")) || null;
       if (!current && period !== "monthly") {
         const item: PlannedIn = {
@@ -384,7 +402,9 @@ export function ObligationDialog({
           movable: false,
           category,
         };
-        return api.addPlanned(item);
+        const created = await api.addPlanned(item);
+        await applyRule("planned", created.id, rule, false);
+        return created;
       }
       const o: ObligationIn = {
         name: str(f.get("name")),
@@ -395,7 +415,11 @@ export function ObligationDialog({
         category,
         debtLeft: num(f.get("debtLeft")),
       };
-      return current ? api.updateObligation(current.id, o) : api.addObligation(o);
+      const saved = current
+        ? await api.updateObligation(current.id, o)
+        : await api.addObligation(o);
+      await applyRule("obligation", saved.id, rule, !!current?.rule);
+      return saved;
     },
     () => {
       onClose();
@@ -433,7 +457,7 @@ export function ObligationDialog({
           <input name="name" required maxLength={200} defaultValue={current?.name ?? ""} />
         </label>
         <label className="nav-field">
-          {c.tx.amount}
+          {rule.on ? ru.rules.fallback : c.tx.amount}
           <input
             name="amount"
             type="number"
@@ -488,6 +512,13 @@ export function ObligationDialog({
           </label>
         )}
         <CategorySelect value={current?.categoryId} />
+        <RuleEditor
+          value={rule}
+          onChange={setRule}
+          self={current ? `ob_${current.id}` : undefined}
+          obligations={obs.data}
+          planned={pls.data}
+        />
         <button className="nav-primary" disabled={save.isPending}>
           {ru.common.save}
         </button>
@@ -511,8 +542,19 @@ export function PlannedDialog({
   const p = c.payments;
   const current = value && value !== "new" ? value : null;
   const [error, setError] = useState("");
+  const [rule, setRule] = useState<RuleState>(() => ruleStateFrom(current?.rule));
+  const obs = useQuery(q.obligations);
+  const pls = useQuery(q.planned);
   const save = useWrite(
-    (item: PlannedIn) => (current ? api.updatePlanned(current.id, item) : api.addPlanned(item)),
+    async (item: PlannedIn) => {
+      if (!rule.on && current?.rule && !confirmed(ru.rules.removeConfirm))
+        throw new Error(ru.common.cancel);
+      const saved = current
+        ? await api.updatePlanned(current.id, item)
+        : await api.addPlanned(item);
+      await applyRule("planned", saved.id, rule, !!current?.rule);
+      return saved;
+    },
     () => {
       onClose();
       notify(c.saved);
@@ -561,14 +603,14 @@ export function PlannedDialog({
           </select>
         </label>
         <label className="nav-field">
-          {c.tx.amount}
+          {rule.on ? ru.rules.fallback : c.tx.amount}
           <input
             name="amount"
             type="number"
             min={1}
             step={1}
             required
-            defaultValue={current?.amount ?? ""}
+            defaultValue={current?.baseAmount ?? current?.amount ?? ""}
           />
         </label>
         <label className="nav-field">
@@ -588,6 +630,13 @@ export function PlannedDialog({
         </label>
         <CategorySelect value={current?.categoryId} />
         <AccountSelect accounts={accounts} value={current?.accountId ?? ""} optional />
+        <RuleEditor
+          value={rule}
+          onChange={setRule}
+          self={current ? `pl_${current.id}` : undefined}
+          obligations={obs.data}
+          planned={pls.data}
+        />
         <label className="nav-checkbox">
           <input type="checkbox" name="mandatory" defaultChecked={current?.mandatory ?? true} />
           {p.mandatory}

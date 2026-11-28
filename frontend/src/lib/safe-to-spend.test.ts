@@ -102,6 +102,25 @@ describe("planned one-off expenses", () => {
   });
 });
 
+describe("amounts computed by rules", () => {
+  it("use the amount of each month (30 vs 31 days); an uncomputed month falls back to the entered amount", () => {
+    const r = safeToSpend({
+      today: "2026-11-30",
+      balance: 400_000,
+      incomeDays: [],
+      payments: [{ dayOfMonth: 30, amount: 1, amountsByMonth: { "2026-11": 150_000, "2026-12": 155_000 } }],
+    });
+    expect(r.committed).toBe(150_000);
+    const unknown = safeToSpend({
+      today: "2026-11-30",
+      balance: 400_000,
+      incomeDays: [],
+      payments: [{ dayOfMonth: 30, amount: 12_000, amountsByMonth: { "2026-11": null } }],
+    });
+    expect(unknown.committed).toBe(12_000);
+  });
+});
+
 describe("dates", () => {
   it("day 31 moves to the last day of shorter months (29–31 rule)", () => {
     expect(monthlyDate(2026, 2, 31)).toBe("2026-02-28");

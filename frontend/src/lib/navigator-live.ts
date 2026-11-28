@@ -94,6 +94,7 @@ export function liveSnapshot(input: {
             amount: o.amount,
             name: o.name,
             endsAt: o.endsAt,
+            amountsByMonth: o.rule?.amountsByMonth,
           })),
           oneOff: openPlannedExpenses(input.planned ?? []).map((p) => ({
             date: p.dueOn,
