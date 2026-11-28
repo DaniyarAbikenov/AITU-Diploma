@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDownLeft, ArrowLeftRight, Search, Send, Wallet } from "lucide-react";
+import { ArrowDownLeft, ArrowLeftRight, Search, Send, Upload, Wallet } from "lucide-react";
 import { q } from "@/api/client";
 import type { Account, Transaction, TxKind } from "@/api/types";
 import { bankName, ru } from "@/i18n/ru";
@@ -8,6 +8,8 @@ import { formatMonth, monthRange, monthTotals, recentMonths, txKind } from "@/li
 import { money } from "../model";
 import { Panel } from "../shared";
 import { TxDialog } from "./forms";
+import { ImportPanel } from "./ImportPanel";
+import { CompareMonths, ReviewPanel, RulesPanel } from "./LiveDataTools";
 import type { LiveProps } from "./types";
 
 const t = ru.live.transactions;
@@ -84,7 +86,8 @@ export function LiveTransactions({ accounts, today, notify }: LiveProps) {
     [account, setAccount] = useState(""),
     [kind, setKind] = useState(""),
     [search, setSearch] = useState(""),
-    [picked, setPicked] = useState<Transaction | null>(null);
+    [picked, setPicked] = useState<Transaction | null>(null),
+    [importing, setImporting] = useState(false);
   const range = monthRange(month);
   const query = useQuery(
     q.transactionsFor({ ...range, bank: bank || undefined, account: account || undefined }),
@@ -96,6 +99,18 @@ export function LiveTransactions({ accounts, today, notify }: LiveProps) {
   const totals = monthTotals(query.data ?? []);
   return (
     <>
+      <div className="nav-actions">
+        <button
+          className="nav-secondary"
+          onClick={() => setImporting(!importing)}
+          aria-expanded={importing}
+        >
+          <Upload size={16} /> {ru.tools.importButton}
+        </button>
+      </div>
+      {(importing || (!query.isPending && month === months[0] && !query.data?.length)) && (
+        <ImportPanel />
+      )}
       <div className="nav-kpis compact">
         <Panel>
           <p>{t.income}</p>
@@ -183,6 +198,9 @@ export function LiveTransactions({ accounts, today, notify }: LiveProps) {
           </div>
         )}
       </Panel>
+      <CompareMonths month={month} />
+      <ReviewPanel notify={notify} />
+      <RulesPanel notify={notify} />
       <TxDialog
         tx={picked}
         open={!!picked}

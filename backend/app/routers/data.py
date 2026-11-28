@@ -333,7 +333,7 @@ def bulk_categorize(body: BulkCategorizeIn, u: User = Depends(current_user), db:
 @router.get("/merchant-rules", response_model=list[MerchantRuleOut])
 def rules(u: User = Depends(current_user), db: Session = Depends(get_db)):
     rows = db.scalars(select(MerchantRule).where(MerchantRule.user_id == u.id).order_by(MerchantRule.id))
-    return [MerchantRuleOut(id=str(r.id), merchant=r.merchant, categoryId=r.category_id) for r in rows]
+    return [MerchantRuleOut(id=str(r.id), merchant=r.merchant, categoryId=r.category_id, kind=r.kind) for r in rows]
 
 
 @router.delete("/merchant-rules/{rule_id}", response_model=Ok)

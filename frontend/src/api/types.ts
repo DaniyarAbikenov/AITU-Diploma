@@ -95,4 +95,4 @@ export interface CityPrice { item: string; unit: string; price: number; change: 
 export interface Goal { id: string; name: string; target: number; saved: number; monthly: number; deadline: string }
 export interface GoalProjection { goalId: string; etaMonth: string; requiredMonthly: number; onTrack: boolean }
 
-export interface MerchantRule { id: string; merchant: string; categoryId: string }
+export interface MerchantRule { id: string; merchant: string; categoryId: string; kind?: TxKind | null }

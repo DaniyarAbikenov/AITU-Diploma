@@ -175,6 +175,7 @@ class MerchantRuleOut(BaseModel):
     id: str
     merchant: str
     categoryId: str
+    kind: str | None = None
 
 
 class PeriodOut(BaseModel):
