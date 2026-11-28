@@ -10,7 +10,7 @@ from app.core.config import as_of, settings
 from app.core.db import Base, SessionLocal, engine
 from app.core.errors import install_error_handlers
 from app.core.migrate import add_missing_columns
-from app.routers import auth, data, finance, macro, planned, planning, transfers
+from app.routers import auth, data, finance, macro, planned, planning, rules, transfers
 from app.seed import ensure_reference_data, seed_all
 from app.services import imports as imports_svc
 from app.services import nbk
@@ -55,7 +55,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Financial Resilience API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"], allow_headers=["*"])
 install_error_handlers(app)
-for r in (macro.rates_router, auth.router, data.router, finance.router, macro.router, planning.router, planned.router, transfers.router):
+for r in (macro.rates_router, auth.router, data.router, finance.router, macro.router, planning.router, planned.router, transfers.router, rules.router):
     app.include_router(r, prefix=API_PREFIX)
 
 

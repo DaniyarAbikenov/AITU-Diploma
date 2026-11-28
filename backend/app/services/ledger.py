@@ -76,7 +76,7 @@ def clamp_day(year: int, month: int, day: int) -> int:
 def build_context(db: Session, user: User, as_of: date) -> Context:
     accounts = db.scalars(select(Account).where(Account.user_id == user.id)).all()
     obligations = [
-        Ob(o.name, o.kind, o.amount_minor / 100, o.day_of_month, o.ends_at)
+        Ob(o.name, o.kind, _rule_amount(db, user, o, as_of), o.day_of_month, o.ends_at)
         for o in db.scalars(select(Obligation).where(Obligation.user_id == user.id, Obligation.rejected.is_(False)))
     ]
     incomes = [
@@ -99,6 +99,14 @@ def build_context(db: Session, user: User, as_of: date) -> Context:
     )
     _fill_variable_spend(ctx)
     return ctx
+
+
+def _rule_amount(db: Session, user: User, o: Obligation, as_of: date) -> float:
+    """Monthly amount for the engines: the rule's value this month when it can be computed, else the entered one."""
+    from app.services import rules
+
+    c = rules.compute(db, user, "obligation", o.id, month_key(as_of), as_of)
+    return float(c.amount) if c is not None and c.amount is not None else o.amount_minor / 100
 
 
 def _balance_kzt(db: Session, accounts: list[Account]) -> int:

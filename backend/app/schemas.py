@@ -371,6 +371,53 @@ class InsightOut(BaseModel):
 
 
 # ---- obligations / income
+RuleKind = Literal["per_day", "percent_income", "percent_of", "fixed_plus", "formula"]
+
+
+class RuleInfoOut(BaseModel):
+    """How the amount is computed and what it is this month and the next ones (null = not computed, never 0)."""
+    kind: RuleKind
+    params: dict
+    expression: str
+    validFrom: str
+    amountThisMonth: int | float | None
+    explanation: str
+    estimate: bool
+    overridden: bool = False
+    missing: str | None = None
+    amountsByMonth: dict[str, int | float | None] = {}
+
+
+class RuleIn(BaseModel):
+    kind: RuleKind
+    params: dict = {}
+    expression: str | None = Field(default=None, max_length=300)
+
+
+class RulePreviewIn(RuleIn):
+    month: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}$")
+
+
+class RulePreviewOut(BaseModel):
+    amount: int | float | None = None
+    explanation: str | None = None
+    estimate: bool = False
+    missing: str | None = None
+    expression: str | None = None
+    error: str | None = None
+    errorPos: int | None = None
+
+
+class OverrideIn(BaseModel):
+    """null removes the override (the rule applies again)."""
+    amount: float | None = Field(default=None, ge=0, le=1e12)
+
+
+class RuleVariableOut(BaseModel):
+    name: str
+    description: str
+
+
 class ObligationOut(BaseModel):
     id: str
     name: str
@@ -382,6 +429,7 @@ class ObligationOut(BaseModel):
     rejected: bool = False
     categoryId: str | None = None
     debtLeft: int | float | None = None
+    rule: RuleInfoOut | None = None
 
 
 class ObligationIn(BaseModel):
@@ -469,6 +517,8 @@ class PlannedPaymentOut(BaseModel):
     paid: int | float
     left: int | float
     settlements: list[SettlementOut] = []
+    baseAmount: int | float | None = None  # the entered amount when a rule computes `amount`
+    rule: RuleInfoOut | None = None
 
 
 class ConfirmIn(BaseModel):

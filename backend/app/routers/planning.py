@@ -32,10 +32,15 @@ from app.services.ledger import add_months, month_key
 router = APIRouter(tags=["planning"])
 
 
-def ob_out(o: Obligation) -> ObligationOut:
-    return ObligationOut(id=str(o.id), name=o.name, kind=o.kind, amount=to_major(o.amount_minor), dayOfMonth=o.day_of_month,
+def ob_out(o: Obligation, db: Session | None = None, u: User | None = None) -> ObligationOut:
+    from app.routers.rules import rule_info
+
+    out = ObligationOut(id=str(o.id), name=o.name, kind=o.kind, amount=to_major(o.amount_minor), dayOfMonth=o.day_of_month,
                          endsAt=o.ends_at, confirmed=o.confirmed, rejected=o.rejected, categoryId=o.category_id,
                          debtLeft=None if o.debt_left_minor is None else to_major(o.debt_left_minor))
+    if db is not None and u is not None:
+        out.rule = rule_info(db, u, "obligation", o.id)
+    return out
 
 
 def _apply_decision(row, body) -> None:
@@ -66,7 +71,7 @@ def _own(db: Session, model, item_id: int, user: User, what: str):
 # ---- obligations
 @router.get("/obligations", response_model=list[ObligationOut])
 def obligations(u: User = Depends(current_user), db: Session = Depends(get_db)):
-    return [ob_out(o) for o in db.scalars(select(Obligation).where(Obligation.user_id == u.id).order_by(Obligation.id))]
+    return [ob_out(o, db, u) for o in db.scalars(select(Obligation).where(Obligation.user_id == u.id).order_by(Obligation.id))]
 
 
 @router.post("/obligations", response_model=ObligationOut, status_code=201)
@@ -77,7 +82,7 @@ def add_obligation(body: ObligationIn, u: User = Depends(current_user), db: Sess
                    debt_left_minor=None if body.debtLeft is None else to_minor(body.debtLeft))
     db.add(o)
     db.commit()
-    return ob_out(o)
+    return ob_out(o, db, u)
 
 
 @router.patch("/obligations/{ob_id}", response_model=ObligationOut)
@@ -102,7 +107,7 @@ def update_obligation(ob_id: int, body: ObligationPatch, u: User = Depends(curre
         o.debt_left_minor = None if body.debtLeft is None else to_minor(body.debtLeft)
     _apply_decision(o, body)
     db.commit()
-    return ob_out(o)
+    return ob_out(o, db, u)
 
 
 @router.delete("/obligations/{ob_id}", response_model=Ok)

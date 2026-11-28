@@ -240,6 +240,34 @@ class TransactionEdit(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class AmountRule(Base):
+    """A rule that computes the monthly amount of an obligation or a planned item. Editing a rule adds a version
+    valid from a month; earlier months keep the version they were computed with (paid facts are never rewritten)."""
+    __tablename__ = "amount_rules"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    target_type: Mapped[str] = mapped_column(String(12))  # obligation | planned
+    target_id: Mapped[int] = mapped_column(Integer, index=True)
+    kind: Mapped[str] = mapped_column(String(20))  # per_day | percent_income | percent_of | fixed_plus | formula
+    params: Mapped[dict] = mapped_column(JSON, default=dict)
+    expression: Mapped[str] = mapped_column(String(300))
+    valid_from: Mapped[str] = mapped_column(String(7))  # YYYY-MM
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AmountOverride(Base):
+    """The user's own amount for one month, over the rule."""
+    __tablename__ = "amount_overrides"
+    __table_args__ = (UniqueConstraint("user_id", "target_type", "target_id", "month", name="uq_override"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    target_type: Mapped[str] = mapped_column(String(12))
+    target_id: Mapped[int] = mapped_column(Integer)
+    month: Mapped[str] = mapped_column(String(7))
+    amount_minor: Mapped[int] = mapped_column(BigInteger)
+
+
 class Goal(Base):
     __tablename__ = "goals"
     id: Mapped[int] = mapped_column(primary_key=True)

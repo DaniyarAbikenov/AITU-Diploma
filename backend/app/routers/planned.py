@@ -21,6 +21,7 @@ from app.schemas import (
     SettlementOut,
 )
 from app.services.accounts import tx_amount
+from app.services.ledger import month_key
 
 router = APIRouter(tags=["planning"])
 
@@ -58,18 +59,30 @@ def _settlements(db: Session, p: PlannedPayment) -> list[PlannedSettlement]:
                            .order_by(PlannedSettlement.id)))
 
 
+def amount_of(db: Session, p: PlannedPayment) -> tuple[int, object]:
+    """Amount of the current occurrence in minor units: from its rule or override when it has one, else as entered."""
+    from app.routers.rules import rule_info
+
+    info = rule_info(db, db.get(User, p.user_id), "planned", p.id, month_key(p.due_on))
+    if info is not None and info.amountThisMonth is not None:
+        return to_minor(info.amountThisMonth), info
+    return p.amount_minor, info
+
+
 def out(db: Session, p: PlannedPayment) -> PlannedPaymentOut:
     rows = _settlements(db, p)
     paid = sum(s.amount_minor for s in rows)
-    left = max(0, p.amount_minor - paid)
+    amount_minor, info = amount_of(db, p)
+    left = max(0, amount_minor - paid)
     status = "cancelled" if p.cancelled else "paid" if left == 0 else "partial" if paid > 0 else "planned"
     return PlannedPaymentOut(
-        id=str(p.id), name=p.name, direction=p.direction, amount=to_major(p.amount_minor), dueOn=p.due_on.isoformat(),
+        id=str(p.id), name=p.name, direction=p.direction, amount=to_major(amount_minor), dueOn=p.due_on.isoformat(),
         dueTo=p.due_to.isoformat() if p.due_to else None, repeat=p.repeat, categoryId=p.category_id,
         accountId=str(p.account_id) if p.account_id else None, mandatory=p.mandatory, movable=p.movable,
         status=status, paid=to_major(paid), left=to_major(left),
         settlements=[SettlementOut(transactionId=str(s.transaction_id), amount=to_major(s.amount_minor),
-                                   period=s.period.isoformat()) for s in rows])
+                                   period=s.period.isoformat()) for s in rows],
+        baseAmount=to_major(p.amount_minor), rule=info)
 
 
 @router.get("/planned-payments", response_model=list[PlannedPaymentOut])
@@ -140,7 +153,7 @@ def settle(pid: int, body: SettleIn, u: User = Depends(current_user), db: Sessio
     if p.cancelled:
         raise ApiError(409, "Статья отменена")
     paid = sum(s.amount_minor for s in _settlements(db, p))
-    left = p.amount_minor - paid
+    left = amount_of(db, p)[0] - paid
     if left <= 0:
         raise ApiError(409, "Статья уже оплачена")
     if body.transactionId:
@@ -171,7 +184,7 @@ def settle(pid: int, body: SettleIn, u: User = Depends(current_user), db: Sessio
         raise ApiError(422, f"Сумма больше остатка по статье ({to_major(left)} ₸)")
     db.add(PlannedSettlement(user_id=u.id, planned_id=p.id, transaction_id=t.id, amount_minor=amount, period=p.due_on))
     db.flush()
-    if p.repeat == "yearly" and paid + amount >= p.amount_minor:
+    if p.repeat == "yearly" and paid + amount >= amount_of(db, p)[0]:
         p.due_on = _next_year(p.due_on)  # the next occurrence starts unpaid; history keeps the old period
         if p.due_to:
             p.due_to = _next_year(p.due_to)
