@@ -104,4 +104,24 @@ describe("Navigator modes (FR-01)", () => {
       expect(db.obligations.find((o) => o.name === "Yandex Plus")?.rejected).toBe(true),
     );
   });
+  it("opens the tab named in ?tab= and shows the moved sections", async () => {
+    window.history.pushState({}, "", "/navigator?tab=debts");
+    await signIn();
+    show();
+    expect(await screen.findByText("Долги без сюрпризов")).toBeInTheDocument();
+    expect(await screen.findByText("А что если взять рассрочку?")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: /Макро/ })[0]);
+    expect(await screen.findByText("Мир, цены и вы")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: /Операции/ })[0]);
+    expect(await screen.findByText("Правила категорий")).toBeInTheDocument();
+    window.history.pushState({}, "", "/");
+  });
+  it("demo mode says the moved sections need the working mode", async () => {
+    window.history.pushState({}, "", "/navigator?tab=macro&mode=demo");
+    show();
+    expect(
+      await screen.findByText(/Этот раздел работает в режиме «Мои данные»/),
+    ).toBeInTheDocument();
+    window.history.pushState({}, "", "/");
+  });
 });

@@ -7,7 +7,7 @@ import { ru } from "@/i18n/ru";
 import { formatDay, liveSnapshot } from "@/lib/navigator-live";
 import { todayIn } from "@/lib/safe-to-spend";
 import { NavigatorFrame, type NavMode } from "../NavigatorFrame";
-import type { Tab } from "../model";
+import { initialTab, type Tab } from "../model";
 import { Panel } from "../shared";
 import { Missing } from "./common";
 import { LiveCalendar } from "./LiveCalendar";
@@ -29,7 +29,7 @@ export function LiveNavigator({
   onMode: (m: NavMode) => void;
   signedIn: boolean;
 }) {
-  const [tab, setTab] = useState<Tab>("home"),
+  const [tab, setTab] = useState<Tab>(initialTab),
     [toast, setToast] = useState("");
   useEffect(() => {
     if (!toast) return;

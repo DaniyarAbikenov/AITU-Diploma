@@ -37,6 +37,12 @@ export const tabs = [
   { id: "profile", name: ru.tabs.profile, icon: Settings2 },
 ] as const;
 export type Tab = (typeof tabs)[number]["id"];
+/** The tab named in ?tab= (old page URLs redirect there), otherwise the overview. */
+export const initialTab = (): Tab => {
+  const v =
+    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("tab");
+  return tabs.some((t) => t.id === v) ? (v as Tab) : "home";
+};
 export type Modal =
   | { type: "transaction"; entry?: NavTransaction }
   | { type: "transfer"; goal: NavGoal }

@@ -8,7 +8,7 @@ import { NAV_QUESTS, navMetrics, type NavigatorAction } from "@/lib/navigator";
 import { NavigatorDialog } from "./NavigatorDialog";
 import { NavigatorFrame, type NavMode } from "./NavigatorFrame";
 import { Progress } from "./shared";
-import type { Modal, Tab } from "./model";
+import { initialTab, type Modal, type Tab } from "./model";
 import { CalendarTab } from "./tabs/CalendarTab";
 import { ForecastTab } from "./tabs/ForecastTab";
 import { GoalsTab } from "./tabs/GoalsTab";
@@ -22,7 +22,7 @@ import "./navigator.css";
 export function DemoNavigator({ onMode }: { onMode: (m: NavMode) => void }) {
   const query = useQuery(q.navigator),
     qc = useQueryClient();
-  const [tab, setTab] = useState<Tab>("home"),
+  const [tab, setTab] = useState<Tab>(initialTab),
     [modal, setModal] = useState<Modal>(null),
     [toast, setToast] = useState(""),
     [formError, setFormError] = useState("");

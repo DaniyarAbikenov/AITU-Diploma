@@ -10,33 +10,58 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AppRouteImport } from './routes/_app'
+import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as DebtsRouteImport } from './routes/debts'
+import { Route as ExpensesRouteImport } from './routes/expenses'
+import { Route as ForecastRouteImport } from './routes/forecast'
+import { Route as GoalsRouteImport } from './routes/goals'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as MacroRouteImport } from './routes/macro'
 import { Route as NavigatorRouteImport } from './routes/navigator'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as RegisterRouteImport } from './routes/register'
-import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
-import { Route as AppDebtsRouteImport } from './routes/_app/debts'
-import { Route as AppExpensesRouteImport } from './routes/_app/expenses'
-import { Route as AppForecastRouteImport } from './routes/_app/forecast'
-import { Route as AppGoalsRouteImport } from './routes/_app/goals'
-import { Route as AppMacroRouteImport } from './routes/_app/macro'
-import { Route as AppResilienceRouteImport } from './routes/_app/resilience'
-import { Route as AppScenariosRouteImport } from './routes/_app/scenarios'
-import { Route as AppSettingsRouteImport } from './routes/_app/settings'
+import { Route as ResilienceRouteImport } from './routes/resilience'
+import { Route as ScenariosRouteImport } from './routes/scenarios'
+import { Route as SettingsRouteImport } from './routes/settings'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppRoute = AppRouteImport.update({
-  id: '/_app',
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DebtsRoute = DebtsRouteImport.update({
+  id: '/debts',
+  path: '/debts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExpensesRoute = ExpensesRouteImport.update({
+  id: '/expenses',
+  path: '/expenses',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ForecastRoute = ForecastRouteImport.update({
+  id: '/forecast',
+  path: '/forecast',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GoalsRoute = GoalsRouteImport.update({
+  id: '/goals',
+  path: '/goals',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MacroRoute = MacroRouteImport.update({
+  id: '/macro',
+  path: '/macro',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NavigatorRoute = NavigatorRouteImport.update({
@@ -54,161 +79,137 @@ const RegisterRoute = RegisterRouteImport.update({
   path: '/register',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppDashboardRoute = AppDashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppDebtsRoute = AppDebtsRouteImport.update({
-  id: '/debts',
-  path: '/debts',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppExpensesRoute = AppExpensesRouteImport.update({
-  id: '/expenses',
-  path: '/expenses',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppForecastRoute = AppForecastRouteImport.update({
-  id: '/forecast',
-  path: '/forecast',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppGoalsRoute = AppGoalsRouteImport.update({
-  id: '/goals',
-  path: '/goals',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppMacroRoute = AppMacroRouteImport.update({
-  id: '/macro',
-  path: '/macro',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppResilienceRoute = AppResilienceRouteImport.update({
+const ResilienceRoute = ResilienceRouteImport.update({
   id: '/resilience',
   path: '/resilience',
-  getParentRoute: () => AppRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AppScenariosRoute = AppScenariosRouteImport.update({
+const ScenariosRoute = ScenariosRouteImport.update({
   id: '/scenarios',
   path: '/scenarios',
-  getParentRoute: () => AppRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AppSettingsRoute = AppSettingsRouteImport.update({
+const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
-  getParentRoute: () => AppRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/dashboard': typeof DashboardRoute
+  '/debts': typeof DebtsRoute
+  '/expenses': typeof ExpensesRoute
+  '/forecast': typeof ForecastRoute
+  '/goals': typeof GoalsRoute
   '/login': typeof LoginRoute
+  '/macro': typeof MacroRoute
   '/navigator': typeof NavigatorRoute
   '/onboarding': typeof OnboardingRoute
   '/register': typeof RegisterRoute
-  '/dashboard': typeof AppDashboardRoute
-  '/debts': typeof AppDebtsRoute
-  '/expenses': typeof AppExpensesRoute
-  '/forecast': typeof AppForecastRoute
-  '/goals': typeof AppGoalsRoute
-  '/macro': typeof AppMacroRoute
-  '/resilience': typeof AppResilienceRoute
-  '/scenarios': typeof AppScenariosRoute
-  '/settings': typeof AppSettingsRoute
+  '/resilience': typeof ResilienceRoute
+  '/scenarios': typeof ScenariosRoute
+  '/settings': typeof SettingsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/dashboard': typeof DashboardRoute
+  '/debts': typeof DebtsRoute
+  '/expenses': typeof ExpensesRoute
+  '/forecast': typeof ForecastRoute
+  '/goals': typeof GoalsRoute
   '/login': typeof LoginRoute
+  '/macro': typeof MacroRoute
   '/navigator': typeof NavigatorRoute
   '/onboarding': typeof OnboardingRoute
   '/register': typeof RegisterRoute
-  '/dashboard': typeof AppDashboardRoute
-  '/debts': typeof AppDebtsRoute
-  '/expenses': typeof AppExpensesRoute
-  '/forecast': typeof AppForecastRoute
-  '/goals': typeof AppGoalsRoute
-  '/macro': typeof AppMacroRoute
-  '/resilience': typeof AppResilienceRoute
-  '/scenarios': typeof AppScenariosRoute
-  '/settings': typeof AppSettingsRoute
+  '/resilience': typeof ResilienceRoute
+  '/scenarios': typeof ScenariosRoute
+  '/settings': typeof SettingsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/_app': typeof AppRouteWithChildren
+  '/dashboard': typeof DashboardRoute
+  '/debts': typeof DebtsRoute
+  '/expenses': typeof ExpensesRoute
+  '/forecast': typeof ForecastRoute
+  '/goals': typeof GoalsRoute
   '/login': typeof LoginRoute
+  '/macro': typeof MacroRoute
   '/navigator': typeof NavigatorRoute
   '/onboarding': typeof OnboardingRoute
   '/register': typeof RegisterRoute
-  '/_app/dashboard': typeof AppDashboardRoute
-  '/_app/debts': typeof AppDebtsRoute
-  '/_app/expenses': typeof AppExpensesRoute
-  '/_app/forecast': typeof AppForecastRoute
-  '/_app/goals': typeof AppGoalsRoute
-  '/_app/macro': typeof AppMacroRoute
-  '/_app/resilience': typeof AppResilienceRoute
-  '/_app/scenarios': typeof AppScenariosRoute
-  '/_app/settings': typeof AppSettingsRoute
+  '/resilience': typeof ResilienceRoute
+  '/scenarios': typeof ScenariosRoute
+  '/settings': typeof SettingsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/login'
-    | '/navigator'
-    | '/onboarding'
-    | '/register'
     | '/dashboard'
     | '/debts'
     | '/expenses'
     | '/forecast'
     | '/goals'
+    | '/login'
     | '/macro'
+    | '/navigator'
+    | '/onboarding'
+    | '/register'
     | '/resilience'
     | '/scenarios'
     | '/settings'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/login'
-    | '/navigator'
-    | '/onboarding'
-    | '/register'
     | '/dashboard'
     | '/debts'
     | '/expenses'
     | '/forecast'
     | '/goals'
+    | '/login'
     | '/macro'
+    | '/navigator'
+    | '/onboarding'
+    | '/register'
     | '/resilience'
     | '/scenarios'
     | '/settings'
   id:
     | '__root__'
     | '/'
-    | '/_app'
+    | '/dashboard'
+    | '/debts'
+    | '/expenses'
+    | '/forecast'
+    | '/goals'
     | '/login'
+    | '/macro'
     | '/navigator'
     | '/onboarding'
     | '/register'
-    | '/_app/dashboard'
-    | '/_app/debts'
-    | '/_app/expenses'
-    | '/_app/forecast'
-    | '/_app/goals'
-    | '/_app/macro'
-    | '/_app/resilience'
-    | '/_app/scenarios'
-    | '/_app/settings'
+    | '/resilience'
+    | '/scenarios'
+    | '/settings'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AppRoute: typeof AppRouteWithChildren
+  DashboardRoute: typeof DashboardRoute
+  DebtsRoute: typeof DebtsRoute
+  ExpensesRoute: typeof ExpensesRoute
+  ForecastRoute: typeof ForecastRoute
+  GoalsRoute: typeof GoalsRoute
   LoginRoute: typeof LoginRoute
+  MacroRoute: typeof MacroRoute
   NavigatorRoute: typeof NavigatorRoute
   OnboardingRoute: typeof OnboardingRoute
   RegisterRoute: typeof RegisterRoute
+  ResilienceRoute: typeof ResilienceRoute
+  ScenariosRoute: typeof ScenariosRoute
+  SettingsRoute: typeof SettingsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -220,11 +221,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app': {
-      id: '/_app'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof AppRouteImport
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/debts': {
+      id: '/debts'
+      path: '/debts'
+      fullPath: '/debts'
+      preLoaderRoute: typeof DebtsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/expenses': {
+      id: '/expenses'
+      path: '/expenses'
+      fullPath: '/expenses'
+      preLoaderRoute: typeof ExpensesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forecast': {
+      id: '/forecast'
+      path: '/forecast'
+      fullPath: '/forecast'
+      preLoaderRoute: typeof ForecastRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/goals': {
+      id: '/goals'
+      path: '/goals'
+      fullPath: '/goals'
+      preLoaderRoute: typeof GoalsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -232,6 +261,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/macro': {
+      id: '/macro'
+      path: '/macro'
+      fullPath: '/macro'
+      preLoaderRoute: typeof MacroRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/navigator': {
@@ -255,105 +291,45 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RegisterRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app/dashboard': {
-      id: '/_app/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof AppDashboardRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/debts': {
-      id: '/_app/debts'
-      path: '/debts'
-      fullPath: '/debts'
-      preLoaderRoute: typeof AppDebtsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/expenses': {
-      id: '/_app/expenses'
-      path: '/expenses'
-      fullPath: '/expenses'
-      preLoaderRoute: typeof AppExpensesRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/forecast': {
-      id: '/_app/forecast'
-      path: '/forecast'
-      fullPath: '/forecast'
-      preLoaderRoute: typeof AppForecastRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/goals': {
-      id: '/_app/goals'
-      path: '/goals'
-      fullPath: '/goals'
-      preLoaderRoute: typeof AppGoalsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/macro': {
-      id: '/_app/macro'
-      path: '/macro'
-      fullPath: '/macro'
-      preLoaderRoute: typeof AppMacroRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/resilience': {
-      id: '/_app/resilience'
+    '/resilience': {
+      id: '/resilience'
       path: '/resilience'
       fullPath: '/resilience'
-      preLoaderRoute: typeof AppResilienceRouteImport
-      parentRoute: typeof AppRoute
+      preLoaderRoute: typeof ResilienceRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_app/scenarios': {
-      id: '/_app/scenarios'
+    '/scenarios': {
+      id: '/scenarios'
       path: '/scenarios'
       fullPath: '/scenarios'
-      preLoaderRoute: typeof AppScenariosRouteImport
-      parentRoute: typeof AppRoute
+      preLoaderRoute: typeof ScenariosRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_app/settings': {
-      id: '/_app/settings'
+    '/settings': {
+      id: '/settings'
       path: '/settings'
       fullPath: '/settings'
-      preLoaderRoute: typeof AppSettingsRouteImport
-      parentRoute: typeof AppRoute
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
     }
   }
 }
 
-interface AppRouteChildren {
-  AppDashboardRoute: typeof AppDashboardRoute
-  AppDebtsRoute: typeof AppDebtsRoute
-  AppExpensesRoute: typeof AppExpensesRoute
-  AppForecastRoute: typeof AppForecastRoute
-  AppGoalsRoute: typeof AppGoalsRoute
-  AppMacroRoute: typeof AppMacroRoute
-  AppResilienceRoute: typeof AppResilienceRoute
-  AppScenariosRoute: typeof AppScenariosRoute
-  AppSettingsRoute: typeof AppSettingsRoute
-}
-
-const AppRouteChildren: AppRouteChildren = {
-  AppDashboardRoute: AppDashboardRoute,
-  AppDebtsRoute: AppDebtsRoute,
-  AppExpensesRoute: AppExpensesRoute,
-  AppForecastRoute: AppForecastRoute,
-  AppGoalsRoute: AppGoalsRoute,
-  AppMacroRoute: AppMacroRoute,
-  AppResilienceRoute: AppResilienceRoute,
-  AppScenariosRoute: AppScenariosRoute,
-  AppSettingsRoute: AppSettingsRoute,
-}
-
-const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AppRoute: AppRouteWithChildren,
+  DashboardRoute: DashboardRoute,
+  DebtsRoute: DebtsRoute,
+  ExpensesRoute: ExpensesRoute,
+  ForecastRoute: ForecastRoute,
+  GoalsRoute: GoalsRoute,
   LoginRoute: LoginRoute,
+  MacroRoute: MacroRoute,
   NavigatorRoute: NavigatorRoute,
   OnboardingRoute: OnboardingRoute,
   RegisterRoute: RegisterRoute,
+  ResilienceRoute: ResilienceRoute,
+  ScenariosRoute: ScenariosRoute,
+  SettingsRoute: SettingsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

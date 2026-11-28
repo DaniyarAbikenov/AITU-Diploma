@@ -18,4 +18,19 @@ describe("App routing", () => {
 
     expect(matches.at(-1)?.routeId).not.toBe(rootRouteId);
   });
+  it("keeps old page URLs as redirects into Navigator", () => {
+    const router = createRouter({ routeTree, context: { queryClient: new QueryClient() } });
+    for (const path of [
+      "/dashboard",
+      "/expenses",
+      "/debts",
+      "/forecast",
+      "/goals",
+      "/macro",
+      "/resilience",
+      "/scenarios",
+      "/settings",
+    ])
+      expect(router.matchRoutes(path).at(-1)?.routeId).toBe(path);
+  });
 });
