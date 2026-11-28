@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.config import as_of, settings
 from app.models import FxRate, FxRateHistory, MacroSeries
 
 SUPPORTED = ("KZT", "USD", "EUR", "RUB")
@@ -46,7 +46,7 @@ def store(db: Session, published: date, rates: dict[str, float]) -> None:
 
 def latest(db: Session, currency: str) -> Rate | None:
     if currency == "KZT":
-        return Rate("KZT", 1.0, date.today(), None, "fixed")
+        return Rate("KZT", 1.0, as_of(), None, "fixed")
     row = db.get(FxRate, currency)
     if row is not None:
         return Rate(row.currency, row.rate, row.rate_date, row.fetched_at, row.source)

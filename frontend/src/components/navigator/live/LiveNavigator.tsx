@@ -113,7 +113,8 @@ export function LiveNavigator({
     incomes = incQ.data ?? [],
     goals: LiveGoal[] = goalQ.data ?? [],
     planned = planQ.data ?? [];
-  const today = todayIn(me.timezone || "Asia/Almaty");
+  // one clock with the server: the demo account lives on a fixed date, everyone else in their time zone
+  const today = me.pinnedToday ?? todayIn(me.timezone || "Asia/Almaty");
   const snap = liveSnapshot({ today, me, accounts, obligations, incomes, planned });
   const props: LiveProps = {
     me,

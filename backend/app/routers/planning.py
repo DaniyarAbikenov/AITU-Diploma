@@ -129,7 +129,7 @@ def _monthly_income(db: Session, u: User, confirmed_only: bool = False) -> float
 def calendar(months: int = 12, u: User = Depends(current_user), db: Session = Depends(get_db)):
     """Planned payments for the next `months` months, starting with the month after today."""
     obs = db.scalars(select(Obligation).where(Obligation.user_id == u.id, Obligation.rejected.is_(False))).all()
-    first = add_months(as_of().replace(day=1), 1)
+    first = add_months(as_of(u).replace(day=1), 1)
     out = []
     for i in range(max(1, min(months, 36))):
         key = month_key(add_months(first, i))
@@ -158,7 +158,7 @@ def _dti_rows(db: Session, u: User, first: date, last: date):
 def dti_history(months: int = 12, u: User = Depends(current_user), db: Session = Depends(get_db)):
     """Debt-to-income per completed month: loan and installment payments (operations, not balances) over the income
     received in that month. Months without usable income get dti=null with the reason; above 100 % → "check"."""
-    today = as_of()
+    today = as_of(u)
     cur = today.replace(day=1)
     keys = [month_key(add_months(cur, -k)) for k in range(max(1, min(months, 36)), 0, -1)]
     income = dict.fromkeys(keys, 0)
@@ -260,8 +260,8 @@ def delete_income(inc_id: int, u: User = Depends(current_user), db: Session = De
 
 
 # ---- goals
-def goal_out(g: Goal) -> GoalOut:
-    proj = goal_svc.projection(g.target_minor / 100, g.saved_minor / 100, g.monthly_minor / 100, g.deadline, as_of())
+def goal_out(g: Goal, u: User) -> GoalOut:
+    proj = goal_svc.projection(g.target_minor / 100, g.saved_minor / 100, g.monthly_minor / 100, g.deadline, as_of(u))
     return GoalOut(id=str(g.id), name=g.name, target=to_major(g.target_minor), saved=to_major(g.saved_minor),
                    monthly=to_major(g.monthly_minor), deadline=g.deadline,
                    projection=GoalProjectionOut(goalId=str(g.id), **proj))
@@ -269,7 +269,7 @@ def goal_out(g: Goal) -> GoalOut:
 
 @router.get("/goals", response_model=list[GoalOut])
 def goals(u: User = Depends(current_user), db: Session = Depends(get_db)):
-    return [goal_out(g) for g in db.scalars(select(Goal).where(Goal.user_id == u.id).order_by(Goal.id))]
+    return [goal_out(g, u) for g in db.scalars(select(Goal).where(Goal.user_id == u.id).order_by(Goal.id))]
 
 
 @router.post("/goals", response_model=Ok, status_code=201)

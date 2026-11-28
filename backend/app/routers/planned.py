@@ -168,7 +168,7 @@ def settle(pid: int, body: SettleIn, u: User = Depends(current_user), db: Sessio
         if account_id is None:
             raise ApiError(422, "Выберите счёт, с которого прошла оплата")
         amount = to_minor(body.amount) if body.amount else left
-        on = date.fromisoformat(body.date) if body.date else as_of()
+        on = date.fromisoformat(body.date) if body.date else as_of(u)
         sign = 1 if p.direction == "income" else -1
         acc = db.get(Account, account_id)
         t = Transaction(user_id=u.id, account_id=account_id, booked_on=on, amount_minor=sign * amount, currency=acc.currency,

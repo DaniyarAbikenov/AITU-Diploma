@@ -1,6 +1,6 @@
 """One consistent snapshot of a user's data for the signal evaluators: same as_of, perimeter and entities for all."""
 import calendar
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, timedelta
 from fractions import Fraction
 from functools import cached_property
@@ -36,7 +36,10 @@ HISTORY_DAYS = 120
 class Snapshot:
     db: Session
     user: User
-    as_of: date = field(default_factory=app_today)
+    as_of: date = None  # defaults to today of the user
+
+    def __post_init__(self):
+        self.as_of = self.as_of or app_today(self.user)
 
     @cached_property
     def th(self):

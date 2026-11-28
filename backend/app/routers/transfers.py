@@ -39,7 +39,7 @@ def create_transfer(body: TransferIn, u: User = Depends(current_user), db: Sessi
     if src.id == dst.id:
         raise ApiError(422, "Выберите два разных счёта")
     on = date.fromisoformat(body.date)
-    if on > as_of():
+    if on > as_of(u):
         raise ApiError(422, "Перевод не может быть в будущем. Будущий перевод добавьте как плановую статью.")
     out_minor = to_minor(body.amount)
     if src.currency != dst.currency and body.toAmount is None:

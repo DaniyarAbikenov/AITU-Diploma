@@ -2,11 +2,11 @@
 from datetime import date
 
 from sqlalchemy import and_, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.core.config import as_of as app_today
 from app.core.money import to_major, to_minor
-from app.models import Account, AccountCheckpoint, ImportBatch, Transaction
+from app.models import Account, AccountCheckpoint, ImportBatch, Transaction, User
 from app.schemas import AccountOut
 from app.services import fx
 
@@ -85,7 +85,9 @@ def account_out(db: Session, a: Account) -> AccountOut:
 
 def frozen_minor(a: Account, balance_minor: int, today: date | None = None) -> int:
     """Blocked money today: none after frozen_until, the given part, or the whole (non-negative) balance."""
-    today = today or app_today()
+    if today is None:
+        db = object_session(a)
+        today = app_today(db.get(User, a.user_id) if db is not None else None)
     if a.frozen_until is None or a.frozen_until <= today or balance_minor <= 0:
         return 0
     return balance_minor if a.frozen_minor is None else min(a.frozen_minor, balance_minor)

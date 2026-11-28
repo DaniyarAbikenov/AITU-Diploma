@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.core.config import pinned_today
 from app.core.db import get_db
 from app.core.errors import ApiError
 from app.core.money import to_major, to_minor
@@ -43,6 +44,7 @@ def _major(minor: int | None):
 
 def user_out(u: User) -> UserOut:
     return UserOut(id=str(u.id), email=u.email, name=u.name, city=u.city, timezone=u.timezone or "Asia/Almaty",
+                   pinnedToday=p.isoformat() if (p := pinned_today(u)) else None,
                    plannedIncome=_major(u.planned_income_minor), essentialExpenses=_major(u.essential_expenses_minor),
                    workHours=u.work_hours_month)
 

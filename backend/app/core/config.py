@@ -1,5 +1,6 @@
 import os
-from datetime import date
+from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 
 class Settings:
@@ -22,7 +23,21 @@ class Settings:
 settings = Settings()
 
 
-def as_of() -> date:
-    """'Today' for all calculations. APP_AS_OF pins it for reproducible demos and tests."""
-    pinned = os.getenv("APP_AS_OF")
-    return date.fromisoformat(pinned) if pinned else date.today()
+DEMO_EMAIL = "demo@zapas.kz"
+DEFAULT_TZ = "Asia/Almaty"
+
+
+def today_in(tz: str | None, now: datetime | None = None) -> date:
+    """Calendar date in a time zone; the server clock (UTC in a container) is never used as the user's date."""
+    return (now or datetime.now(timezone.utc)).astimezone(ZoneInfo(tz or DEFAULT_TZ)).date()
+
+
+def pinned_today(user=None) -> date | None:
+    """APP_AS_OF pins everyone (tests only). DEMO_AS_OF pins the demo account, whose data ends on that date."""
+    pin = os.getenv("APP_AS_OF") or (os.getenv("DEMO_AS_OF") if user is not None and user.email == DEMO_EMAIL else None)
+    return date.fromisoformat(pin) if pin else None
+
+
+def as_of(user=None) -> date:
+    """"Today" for all calculations: in the user's time zone (BR-06)."""
+    return pinned_today(user) or today_in(user.timezone if user is not None else None)

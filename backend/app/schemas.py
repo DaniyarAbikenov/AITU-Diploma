@@ -28,6 +28,7 @@ class UserOut(BaseModel):
     city: str
     currency: Literal["KZT"] = "KZT"
     timezone: str = "Asia/Almaty"
+    pinnedToday: str | None = None  # fixed date of the demo account (or of tests); null = the real date
     # null = not provided yet; the UI asks for it instead of showing zero
     plannedIncome: int | float | None = None
     essentialExpenses: int | float | None = None

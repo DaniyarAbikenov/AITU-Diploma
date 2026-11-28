@@ -34,7 +34,7 @@ def _major(v: Decimal | None):
 
 def rule_info(db: Session, u: User, target_type: str, target_id: int, month: str | None = None) -> RuleInfoOut | None:
     """Rule view for an item: this month (or the given one) plus the next two months."""
-    today = as_of()
+    today = as_of(u)
     month = month or month_key(today)
     months = svc.months_ahead(today) if month == month_key(today) else [month]
     first = svc.compute(db, u, target_type, target_id, month, today)
@@ -59,7 +59,7 @@ def variables(_: User = Depends(current_user)):
 @router.post("/rules/preview", response_model=RulePreviewOut)
 def preview(body: RulePreviewIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
     """Check a rule and show what it gives for a month, without saving. Errors come with a position."""
-    today = as_of()
+    today = as_of(u)
     month = body.month or month_key(today)
     try:
         expr = svc.validate(db, u, body.kind, body.params, body.expression)
@@ -86,7 +86,7 @@ def set_rule(target_type: str, target_id: int, body: RuleIn, u: User = Depends(c
         raise ApiError(422, str(e)) from None
     if svc.ref_name(target_type, target_id) in expr:
         raise ApiError(422, "Статья не может ссылаться сама на себя")
-    month = month_key(as_of())
+    month = month_key(as_of(u))
     same = db.scalar(select(AmountRule).where(AmountRule.user_id == u.id, AmountRule.target_type == target_type,
                                               AmountRule.target_id == target_id, AmountRule.valid_from == month))
     if same is None:
@@ -101,7 +101,7 @@ def set_rule(target_type: str, target_id: int, body: RuleIn, u: User = Depends(c
 def delete_rule(target_type: str, target_id: int, u: User = Depends(current_user), db: Session = Depends(get_db)):
     """From this month the entered (fixed) amount applies again; past months keep the rule they used."""
     _target(db, u, target_type, target_id)
-    month = month_key(as_of())
+    month = month_key(as_of(u))
     same = db.scalar(select(AmountRule).where(AmountRule.user_id == u.id, AmountRule.target_type == target_type,
                                               AmountRule.target_id == target_id, AmountRule.valid_from == month))
     if same is None:

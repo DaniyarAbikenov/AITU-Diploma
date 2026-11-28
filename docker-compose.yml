@@ -10,7 +10,7 @@ services:
       JWT_SECRET: local-demo-secret-change-me-0123456789abcdef
       CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
       SEED_DEMO: "1"
-      APP_AS_OF: "2026-10-20"
+      DEMO_AS_OF: "2026-10-20"  # only the demo account; everyone else lives in real time
     volumes: ["backend-data:/app/data"]
   frontend:
     build: ./frontend

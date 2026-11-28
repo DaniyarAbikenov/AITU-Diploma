@@ -66,7 +66,7 @@ def ensure_test_user(db, reset: bool = False) -> User:
         db.commit()
     else:
         _wipe(db, user)
-    today = as_of()
+    today = as_of(user)
     for bank in ("kaspi", "halyk"):
         stmt = synthetic.generate(bank, today - timedelta(days=400), today - timedelta(days=1), seed=4242 + len(bank))
         imports.import_statement(db, user, stmt, source="synthetic")

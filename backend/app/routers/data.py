@@ -80,9 +80,9 @@ def _own_tx(db: Session, u: User, tx_id: int) -> Transaction:
     return t
 
 
-def _parse_day(value: str) -> date:
+def _parse_day(value: str, u: User) -> date:
     d = date.fromisoformat(value)
-    if d > as_of() + timedelta(days=1):
+    if d > as_of(u) + timedelta(days=1):
         raise ApiError(422, "Фактическая операция не может быть в будущем. Для будущих трат используйте план.")
     return d
 
@@ -122,7 +122,7 @@ def create_account(body: AccountIn, u: User = Depends(current_user), db: Session
     db.add(a)
     db.flush()
     if body.balance is not None:
-        on = date.fromisoformat(body.balanceAsOf) if body.balanceAsOf else as_of()
+        on = date.fromisoformat(body.balanceAsOf) if body.balanceAsOf else as_of(u)
         acc_svc.add_checkpoint(db, a, to_minor(body.balance), on, "manual")
     db.commit()
     return acc_svc.account_out(db, a)
@@ -171,7 +171,7 @@ def add_checkpoint(account_id: int, body: CheckpointIn, u: User = Depends(curren
     never a sum of operations. Saving it also confirms the account."""
     a = _own_account(db, u, account_id)
     on = date.fromisoformat(body.asOf)
-    if on > as_of():
+    if on > as_of(u):
         raise ApiError(422, "Дата остатка не может быть в будущем")
     acc_svc.add_checkpoint(db, a, to_minor(body.balance), on, body.source)
     a.confirmed = True
@@ -216,7 +216,7 @@ def create_transaction(body: TransactionIn, u: User = Depends(current_user), db:
     amount = to_minor(body.amount)
     category = body.category or _default_category(body.kind, amount)
     _category_or_422(db, category)
-    t = Transaction(user_id=u.id, account_id=acc.id, booked_on=_parse_day(body.date), amount_minor=amount,
+    t = Transaction(user_id=u.id, account_id=acc.id, booked_on=_parse_day(body.date, u), amount_minor=amount,
                     currency=acc.currency, merchant=body.merchant.strip(), category_id=category, category_source="user",
                     needs_review=False, internal=body.kind == "transfer_own", user_kind=body.kind, source="manual",
                     user_note=(body.note or "").strip() or None, dedup_key="manual-" + uuid.uuid4().hex)
@@ -245,7 +245,7 @@ def update_transaction(tx_id: int, body: RecategorizeIn, u: User = Depends(curre
         else:
             t.user_amount_minor = None if to_minor(body.amount) == t.amount_minor else to_minor(body.amount)
     if body.date is not None:
-        d = _parse_day(body.date)
+        d = _parse_day(body.date, u)
         if t.source == "manual":
             t.booked_on = d
         else:
@@ -403,8 +403,8 @@ async def preview_import(request: Request, u: User = Depends(current_user), db: 
     return ImportPreviewOut(
         bank=parsed.bank, accountName=parsed.account_name, numberMask=parsed.account_mask,
         currency=imports.statement_currency(parsed),
-        periodFrom=(parsed.period_from or (min(dates) if dates else None) or as_of()).isoformat(),
-        periodTo=(parsed.period_to or (max(dates) if dates else None) or as_of()).isoformat(),
+        periodFrom=(parsed.period_from or (min(dates) if dates else None) or as_of(u)).isoformat(),
+        periodTo=(parsed.period_to or (max(dates) if dates else None) or as_of(u)).isoformat(),
         operations=len(parsed.rows),
         closingBalance=None if parsed.closing_balance_minor is None else to_major(parsed.closing_balance_minor),
         suggestedAccountId=str(acc.id) if acc else None, matchedBy=how, needsChoice=how != "number",
@@ -454,6 +454,6 @@ async def import_statement(request: Request, u: User = Depends(current_user), db
         bank = (await request.json()).get("bank", "")
     except ValueError:
         raise ApiError(422, "Ожидается JSON {\"bank\": \"...\"} или multipart с файлом") from None
-    today = as_of()
+    today = as_of(u)
     parsed = synthetic.generate(bank, today - timedelta(days=SYNTHETIC_DAYS), today - timedelta(days=1))
     return report(imports.import_statement(db, u, parsed, source="synthetic"), db=db)

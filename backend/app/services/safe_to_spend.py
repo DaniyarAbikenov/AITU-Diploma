@@ -72,8 +72,8 @@ def compute(today: date, balance_minor: int, income_days: list[int],
             monthly: list[tuple[int, int, str, str, str | None, dict[str, int | None] | None]],
             one_off: list[Payment] = (), needs: Callable[[date], Fraction] | None = None) -> SafeToSpend:
     """monthly: (day of month, amount, name, ref, endsAt YYYY-MM or None, amounts by YYYY-MM from rules or None)."""
-    incomes = sorted(next_monthly(today, d) for d in income_days)
-    nxt = next((d for d in incomes if d > today), None)
+    # strictly after today: money expected today is not counted as received, and the next payout is a later one
+    nxt = min((next_monthly(today + timedelta(days=1), d) for d in income_days), default=None)
     until = nxt - timedelta(days=1) if nxt else monthly_date(today.year, today.month, 31)
     days = (until - today).days + 1
     due = [0] * days

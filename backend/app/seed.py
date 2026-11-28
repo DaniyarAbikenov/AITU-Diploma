@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.catalog import CATEGORIES
-from app.core.config import as_of
+from app.core.config import DEMO_EMAIL, as_of
 from app.core.security import hash_password
 from app.models import (
     Category,
@@ -23,7 +23,6 @@ from app.parsers import synthetic
 from app.services import imports
 from app.services.ledger import add_months, month_key
 
-DEMO_EMAIL = "demo@zapas.kz"
 DEMO_PASSWORD = "demo1234"
 
 # 12 monthly points, oldest first. Endpoints of usdkzt (NBK 20.10.2026: 452.59) are real; the rest is interpolation.
@@ -77,7 +76,7 @@ def seed_demo_user(db: Session) -> User:
     db.flush()
     db.add(MerchantRule(user_id=user.id, merchant="Glovo", category_id="cafe"))
     db.commit()
-    today = as_of()
+    today = as_of(user)
     for bank in ("kaspi", "halyk"):
         stmt = synthetic.generate(bank, today - timedelta(days=400), today - timedelta(days=1))
         imports.import_statement(db, user, stmt, source="synthetic")

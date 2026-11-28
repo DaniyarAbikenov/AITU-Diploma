@@ -6,7 +6,7 @@ export type Status = "ok" | "warn" | "risk";
 export interface User {
   id: string; email: string; name: string; city: string; currency: "KZT";
   /** IANA zone, Asia/Almaty by default. Plan fields: null = not provided yet (never read as 0). */
-  timezone?: string; plannedIncome?: number | null; essentialExpenses?: number | null; workHours?: number | null;
+  timezone?: string; pinnedToday?: string | null; plannedIncome?: number | null; essentialExpenses?: number | null; workHours?: number | null;
 }
 export type ProfilePatch = Partial<Pick<User, "name" | "city" | "timezone" | "plannedIncome" | "essentialExpenses" | "workHours">>;
 export type AccountKind = "current" | "savings" | "deposit" | "cash";

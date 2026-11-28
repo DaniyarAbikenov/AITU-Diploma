@@ -54,6 +54,10 @@ describe("horizon", () => {
     });
     expect(r).toMatchObject({ until: "2026-11-19", days: 12, safeDaily: 10_000 });
   });
+  it("the only payout is today: the horizon runs to the next one, a month later", () => {
+    const r = safeToSpend({ today: "2026-11-29", balance: 1_000, incomeDays: [29], payments: [] });
+    expect(r).toMatchObject({ until: "2026-12-28", horizon: "income", days: 30 });
+  });
   it("an income dated today is already received", () => {
     const r = safeToSpend({
       today: "2026-11-05",

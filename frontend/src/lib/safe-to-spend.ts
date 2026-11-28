@@ -100,9 +100,9 @@ export function safeToSpend(input: {
   oneOff?: Payment[];
 }): SafeToSpend {
   const { today } = input;
-  const incomes = input.incomeDays.map((d) => nextMonthly(today, d)).sort();
-  // An income dated today is already received (it is in the balance): the horizon runs to the next one.
-  const next = incomes.find((d) => d > today) ?? null;
+  const incomes = input.incomeDays.map((d) => nextMonthly(addDays(today, 1), d)).sort();
+  // Strictly after today: money expected today is not counted as received, and the next payout is a later one.
+  const next = incomes[0] ?? null;
   const monthEnd = monthlyDate(+today.slice(0, 4), +today.slice(5, 7), 31);
   const until = next ? addDays(next, -1) : monthEnd;
   const days = daysBetween(today, until) + 1;

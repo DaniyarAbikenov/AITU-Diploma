@@ -41,7 +41,7 @@ MODEL = settings.model_version
 
 
 def ctx_for(db: Session, u: User) -> Context:
-    return build_context(db, u, as_of())
+    return build_context(db, u, as_of(u))
 
 
 def log_run(db: Session, u: User, kind: str, ctx: Context, params: dict, result: dict) -> None:
@@ -144,7 +144,7 @@ def saved_scenarios(u: User = Depends(current_user), db: Session = Depends(get_d
 
 @router.post("/scenarios", response_model=Ok, status_code=201)
 def save_scenario(body: SavedScenarioIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
-    db.add(SavedScenario(user_id=u.id, name=body.name, shocks=[s.model_dump() for s in body.shocks], created_at=as_of()))
+    db.add(SavedScenario(user_id=u.id, name=body.name, shocks=[s.model_dump() for s in body.shocks], created_at=as_of(u)))
     db.commit()
     return Ok()
 
