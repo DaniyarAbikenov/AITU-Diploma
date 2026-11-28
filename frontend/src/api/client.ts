@@ -46,6 +46,11 @@ export const api = {
     if (f.q) p.set("q", f.q);
     return call<T.Transaction[]>("/transactions?" + p, () => m.filterTransactions(f));
   },
+  createTx: (t: T.TransactionIn) => call<T.Transaction>("/transactions", () => m.createTx(t), body("POST", t)),
+  updateTx: (id: string, patch: T.TransactionPatch) => call<T.Transaction>("/transactions/" + id, () => m.updateTx(id, patch), body("PATCH", patch)),
+  deleteTx: (id: string) => call("/transactions/" + id, () => { m.db.transactions = m.db.transactions.filter((x) => x.id !== id); return { ok: true }; }, { method: "DELETE" }),
+  voidTx: (id: string, voided: boolean) => call<T.Transaction>(`/transactions/${id}/${voided ? "void" : "restore"}`, () => Object.assign(m.db.transactions.find((x) => x.id === id)!, { voided }), { method: "POST" }),
+  txHistory: (id: string) => call<T.TransactionEdit[]>(`/transactions/${id}/history`, () => []),
   setTxKind: (id: string, kind: T.TxKind | null, saveRule = false) =>
     call<T.Transaction>(`/transactions/${id}/kind`, () => m.setTxKind(id, kind, saveRule), body("PATCH", { kind, saveRule })),
   categories: () => call<T.Category[]>("/categories", () => m.categories),
@@ -71,6 +76,14 @@ export const api = {
   dismissInsight: (id: string) => call(`/insights/${id}/dismiss`, () => { m.db.dismissed.add(id); return { ok: true }; }, { method: "POST" }),
   obligations: () => call<T.Obligation[]>("/obligations", () => m.db.obligations),
   confirmObligation: (id: string, confirmed: boolean) => call("/obligations/" + id, () => { const o = m.db.obligations.find((x) => x.id === id); if (o) o.confirmed = confirmed; return o; }, body("PATCH", { confirmed })),
+  addObligation: (o: T.ObligationIn) => call<T.Obligation>("/obligations", () => { const n = { ...o, id: "o" + Date.now(), confirmed: true, rejected: false, categoryId: o.category ?? null }; m.db.obligations.push(n); return n; }, body("POST", o)),
+  updateObligation: (id: string, patch: Partial<T.ObligationIn>) => call<T.Obligation>("/obligations/" + id, () => Object.assign(m.db.obligations.find((x) => x.id === id)!, patch), body("PATCH", patch)),
+  deleteObligation: (id: string) => call("/obligations/" + id, () => { m.db.obligations = m.db.obligations.filter((x) => x.id !== id); return { ok: true }; }, { method: "DELETE" }),
+  planned: () => call<T.PlannedPayment[]>("/planned-payments", () => m.db.planned),
+  addPlanned: (p: T.PlannedIn) => call<T.PlannedPayment>("/planned-payments", () => m.addPlanned(p), body("POST", p)),
+  updatePlanned: (id: string, patch: T.PlannedPatch) => call<T.PlannedPayment>("/planned-payments/" + id, () => m.updatePlanned(id, patch), body("PATCH", patch)),
+  deletePlanned: (id: string) => call("/planned-payments/" + id, () => { m.db.planned = m.db.planned.filter((x) => x.id !== id); return { ok: true }; }, { method: "DELETE" }),
+  settlePlanned: (id: string, s: T.SettleIn) => call<T.PlannedPayment>(`/planned-payments/${id}/settle`, () => m.settlePlanned(id, s), body("POST", s)),
   decideObligation: (id: string, d: T.Decision) => call<T.Obligation>("/obligations/" + id, () => m.decide(m.db.obligations, id, d), body("PATCH", d)),
   calendar: () => call<T.ObligationsCalendar>("/obligations/calendar?months=12", m.calendar),
   dti: () => call<T.DtiPoint[]>("/obligations/dti-history", m.dtiHistory),
@@ -119,4 +132,6 @@ export const q = {
   personalInflation: queryOptions({ queryKey: ["personalInflation"], queryFn: api.personalInflation }),
   cityPrices: (city: string) => queryOptions({ queryKey: ["cityPrices", city], queryFn: () => api.cityPrices(city) }),
   goals: queryOptions({ queryKey: ["goals"], queryFn: api.goals }),
+  planned: queryOptions({ queryKey: ["planned"], queryFn: api.planned }),
+  txHistory: (id: string) => queryOptions({ queryKey: ["txHistory", id], queryFn: () => api.txHistory(id) }),
 };

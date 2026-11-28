@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Check, LogIn } from "lucide-react";
+import { Check, LogIn, Plus } from "lucide-react";
 import { API_MODE, q } from "@/api/client";
 import { Loading } from "@/components/kit";
 import { ru } from "@/i18n/ru";
@@ -16,6 +16,7 @@ import { LiveGoals } from "./LiveGoals";
 import { LiveHome } from "./LiveHome";
 import { LiveProfile } from "./LiveProfile";
 import { LiveTransactions } from "./LiveTransactions";
+import { TxDialog } from "./forms";
 import type { LiveGoal, LiveProps } from "./types";
 
 /** Working mode: the signed-in user's data from /api/v1, "today" in the user's time zone (BR-06). */
@@ -42,10 +43,13 @@ export function LiveNavigator({
     accQ = useQuery({ ...q.accounts, ...on }),
     obQ = useQuery({ ...q.obligations, ...on }),
     incQ = useQuery({ ...q.income, ...on }),
-    goalQ = useQuery({ ...q.goals, ...on });
-  const results = [meQ, accQ, obQ, incQ, goalQ];
-  const frame = (name: string, footer: string, body: ReactNode) => (
+    goalQ = useQuery({ ...q.goals, ...on }),
+    planQ = useQuery({ ...q.planned, ...on });
+  const results = [meQ, accQ, obQ, incQ, goalQ, planQ];
+  const [txOpen, setTxOpen] = useState(false);
+  const frame = (name: string, footer: string, body: ReactNode, action?: ReactNode) => (
     <NavigatorFrame
+      action={action}
       mode="live"
       onMode={onMode}
       tab={tab}
@@ -105,15 +109,17 @@ export function LiveNavigator({
     accounts = accQ.data ?? [],
     obligations = obQ.data ?? [],
     incomes = incQ.data ?? [],
-    goals: LiveGoal[] = goalQ.data ?? [];
+    goals: LiveGoal[] = goalQ.data ?? [],
+    planned = planQ.data ?? [];
   const today = todayIn(me.timezone || "Asia/Almaty");
-  const snap = liveSnapshot({ today, me, accounts, obligations, incomes });
+  const snap = liveSnapshot({ today, me, accounts, obligations, incomes, planned });
   const props: LiveProps = {
     me,
     accounts,
     obligations,
     incomes,
     goals,
+    planned,
     today,
     snap,
     go,
@@ -134,6 +140,17 @@ export function LiveNavigator({
         </Panel>
       )}
       {tab === "profile" && <LiveProfile {...props} />}
+      <TxDialog
+        tx={null}
+        open={txOpen}
+        accounts={accounts}
+        today={today}
+        onClose={() => setTxOpen(false)}
+        notify={setToast}
+      />
     </>,
+    <button className="nav-primary" onClick={() => setTxOpen(true)}>
+      <Plus size={18} /> {ru.crud.tx.add}
+    </button>,
   );
 }

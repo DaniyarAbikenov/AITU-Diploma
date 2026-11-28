@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "@/api/client";
-import type { Decision, IncomeIn, IncomeSource, Obligation } from "@/api/types";
+import type { IncomeIn, IncomeSource } from "@/api/types";
 import {
   Dialog,
   DialogContent,
@@ -13,45 +13,21 @@ import {
 import { ru } from "@/i18n/ru";
 import { formatMonth } from "@/lib/navigator-live";
 import { daysInMonth, monthlyDate } from "@/lib/safe-to-spend";
-import { compact, money } from "../model";
 import { Panel } from "../shared";
-import { Missing } from "./common";
+import { IncomesPanel, ObligationsPanel, PlannedPanel } from "./LivePayments";
 import type { LiveProps } from "./types";
 
 const t = ru.live.calendar;
-type Event = { type: "income"; row: IncomeSource } | { type: "payment"; row: Obligation };
-
-const status = (r: { confirmed: boolean; rejected?: boolean }) =>
-  r.rejected ? "rejected" : r.confirmed ? "confirmed" : "pending";
-
-function StatusPill({ r }: { r: { confirmed: boolean; rejected?: boolean } }) {
-  const s = status(r);
-  return (
-    <span className={`nav-pill ${s === "confirmed" ? "ok" : s === "rejected" ? "off" : "warn"}`}>
-      {t[s]}
-    </span>
-  );
-}
-
-const incomeAmount = (i: IncomeSource) =>
-  i.amountMin != null && i.amountMax != null
-    ? t.range(compact(i.amountMin), compact(i.amountMax))
-    : money(i.amount);
-
-export function LiveCalendar({ obligations, incomes, today, notify }: LiveProps) {
-  const qc = useQueryClient();
+export function LiveCalendar({
+  obligations,
+  incomes,
+  planned,
+  accounts,
+  today,
+  notify,
+}: LiveProps) {
   const [offset, setOffset] = useState(0),
-    [editing, setEditing] = useState<IncomeSource | "new" | null>(null),
-    [showRejected, setShowRejected] = useState(false);
-  const decide = useMutation({
-    mutationFn: ({ e, d }: { e: Event; d: Decision }): Promise<unknown> =>
-      e.type === "income" ? api.decideIncome(e.row.id, d) : api.decideObligation(e.row.id, d),
-    onSuccess: (_, { e }) => {
-      qc.invalidateQueries({ queryKey: [e.type === "income" ? "income" : "obligations"] });
-      qc.invalidateQueries({ queryKey: ["resilience"] });
-      notify(ru.live.profile.saved);
-    },
-  });
+    [editing, setEditing] = useState<IncomeSource | "new" | null>(null);
   let y = +today.slice(0, 4),
     m = +today.slice(5, 7) + offset;
   y += Math.floor((m - 1) / 12);
@@ -59,65 +35,25 @@ export function LiveCalendar({ obligations, incomes, today, notify }: LiveProps)
   const monthKey = `${y}-${String(m).padStart(2, "0")}`;
   const days = daysInMonth(y, m),
     first = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7;
-  const events: Event[] = [
-    ...incomes.map((row) => ({ type: "income" as const, row })),
-    ...obligations.map((row) => ({ type: "payment" as const, row })),
-  ];
-  const active = events.filter((e) => !e.row.rejected);
-  const inMonth = active.filter(
-    (e) => e.type === "income" || !e.row.endsAt || monthKey <= e.row.endsAt,
-  );
-  const byDay = (day: number) =>
-    inMonth.filter((e) => +monthlyDate(y, m, e.row.dayOfMonth).slice(8) === day);
-  const rejected = events.filter((e) => e.row.rejected);
-  const row = (e: Event) => (
-    <div className="nav-live-row" key={e.type + e.row.id}>
-      <div>
-        <strong>{e.row.name}</strong> <StatusPill r={e.row} />
-        <p className="nav-small">
-          {e.type === "income" ? "Доход" : ru.obligationKind[e.row.kind]} ·{" "}
-          {t.monthly(e.row.dayOfMonth)}
-          {e.type === "payment" && e.row.endsAt ? ` · до ${e.row.endsAt}` : ""}
-        </p>
-      </div>
-      <strong className={e.type === "income" ? "nav-positive" : ""}>
-        {e.type === "income" ? "+" + incomeAmount(e.row) : "−" + money(e.row.amount)}
-      </strong>
-      <div className="nav-actions">
-        {!e.row.confirmed && (
-          <button
-            className="nav-primary"
-            disabled={decide.isPending}
-            onClick={() => decide.mutate({ e, d: { confirmed: true } })}
-          >
-            {ru.common.confirm}
-          </button>
-        )}
-        {e.row.rejected ? (
-          <button
-            className="nav-secondary"
-            disabled={decide.isPending}
-            onClick={() => decide.mutate({ e, d: { rejected: false } })}
-          >
-            {ru.common.restore}
-          </button>
-        ) : (
-          <button
-            className="nav-secondary"
-            disabled={decide.isPending}
-            onClick={() => decide.mutate({ e, d: { rejected: true } })}
-          >
-            {ru.common.reject}
-          </button>
-        )}
-        {e.type === "income" && (
-          <button className="nav-text-button" onClick={() => setEditing(e.row)}>
-            Изменить
-          </button>
-        )}
-      </div>
-    </div>
-  );
+  type Cell = { key: string; name: string; pending: boolean };
+  const byDay = new Map<number, Cell[]>();
+  const put = (day: number, c: Cell) => byDay.set(day, [...(byDay.get(day) ?? []), c]);
+  for (const i of incomes.filter((x) => !x.rejected))
+    put(+monthlyDate(y, m, i.dayOfMonth).slice(8), {
+      key: "i" + i.id,
+      name: i.name,
+      pending: !i.confirmed,
+    });
+  for (const o of obligations.filter((x) => !x.rejected && (!x.endsAt || monthKey <= x.endsAt)))
+    put(+monthlyDate(y, m, o.dayOfMonth).slice(8), {
+      key: "o" + o.id,
+      name: o.name,
+      pending: !o.confirmed,
+    });
+  for (const pl of planned.filter(
+    (x) => x.status !== "cancelled" && x.dueOn.slice(0, 7) === monthKey,
+  ))
+    put(+pl.dueOn.slice(8), { key: "p" + pl.id, name: pl.name, pending: pl.status !== "paid" });
   return (
     <>
       <Panel
@@ -150,17 +86,17 @@ export function LiveCalendar({ obligations, incomes, today, notify }: LiveProps)
             <span key={`blank${i}`} />
           ))}
           {Array.from({ length: days }, (_, i) => {
-            const list = byDay(i + 1);
+            const list = byDay.get(i + 1) ?? [];
             return (
               <div
                 key={i}
-                className={`${list.length ? "has-event" : ""} ${list.some((e) => !e.row.confirmed) ? "pending-event" : ""}`}
+                className={`${list.length ? "has-event" : ""} ${list.some((e) => e.pending) ? "pending-event" : ""}`}
               >
                 <span>{i + 1}</span>
                 {list.slice(0, 2).map((e) => (
-                  <small key={e.type + e.row.id}>
-                    {e.row.confirmed ? "" : "? "}
-                    {e.row.name}
+                  <small key={e.key}>
+                    {e.pending ? "? " : ""}
+                    {e.name}
                   </small>
                 ))}
                 {list.length > 2 && <small>+{list.length - 2}</small>}
@@ -169,37 +105,15 @@ export function LiveCalendar({ obligations, incomes, today, notify }: LiveProps)
           })}
         </div>
       </Panel>
-      <Panel
-        title={t.title}
-        action={
-          <button className="nav-primary" onClick={() => setEditing("new")}>
-            <Plus size={16} /> {t.addIncome}
-          </button>
-        }
-      >
-        <p className="nav-small">{t.hint}</p>
-        {active.length ? (
-          <div className="nav-live-list">{active.map(row)}</div>
-        ) : (
-          <Missing action={t.addIncome} onAction={() => setEditing("new")}>
-            {t.empty}
-          </Missing>
-        )}
-        {rejected.length > 0 && (
-          <>
-            <button className="nav-text-button" onClick={() => setShowRejected(!showRejected)}>
-              {t.showRejected(rejected.length)}
-            </button>
-            {showRejected && <div className="nav-live-list">{rejected.map(row)}</div>}
-          </>
-        )}
-      </Panel>
+      <IncomesPanel incomes={incomes} onEdit={setEditing} notify={notify} />
+      <ObligationsPanel obligations={obligations} notify={notify} />
+      <PlannedPanel planned={planned} accounts={accounts} today={today} notify={notify} />
       <IncomeDialog
         value={editing}
         onClose={() => setEditing(null)}
         onSaved={() => {
           setEditing(null);
-          notify(ru.live.profile.saved);
+          notify(ru.crud.saved);
         }}
       />
     </>

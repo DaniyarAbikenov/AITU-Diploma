@@ -77,6 +77,31 @@ describe("horizon", () => {
   });
 });
 
+describe("planned one-off expenses", () => {
+  it("count inside the horizon by their unpaid part; overdue ones are due today", () => {
+    const r = safeToSpend({
+      today: "2026-11-21",
+      balance: 100_000,
+      incomeDays: [1],
+      payments: [],
+      oneOff: [
+        { date: "2026-11-22", amount: 90_000, name: "Взнос" },
+        { date: "2026-12-15", amount: 50_000, name: "После горизонта" },
+      ],
+    });
+    expect(r).toMatchObject({ safeDaily: 1_000, committed: 90_000 });
+    const overdue = safeToSpend({
+      today: "2026-11-21",
+      balance: 10_000,
+      incomeDays: [1],
+      payments: [],
+      oneOff: [{ date: "2026-11-01", amount: 20_000 }],
+    });
+    expect(overdue).toMatchObject({ safeDaily: 0, deficit: 10_000 });
+    expect(overdue.payments[0].date).toBe("2026-11-21");
+  });
+});
+
 describe("dates", () => {
   it("day 31 moves to the last day of shorter months (29–31 rule)", () => {
     expect(monthlyDate(2026, 2, 31)).toBe("2026-02-28");

@@ -1,5 +1,13 @@
 /** Working-mode rules on top of /api/v1 data: which money and which events count. Pure and tested. */
-import type { Account, IncomeSource, Obligation, Transaction, TxKind, User } from "@/api/types";
+import type {
+  Account,
+  IncomeSource,
+  Obligation,
+  PlannedPayment,
+  Transaction,
+  TxKind,
+  User,
+} from "@/api/types";
 import { reserveDays, safeToSpend, type SafeToSpend } from "./safe-to-spend";
 
 /** An account counts only when the user confirmed it, chose its type and its balance is known (null ≠ 0). */
@@ -21,7 +29,13 @@ export type LiveSnapshot = {
   reserveDays: number | null;
 };
 
-const sum = (xs: Account[]) => (xs.length ? xs.reduce((a, x) => a + x.balance, 0) : null);
+/** Money on the account now: the known balance plus manual operations entered after it. */
+export const accountNow = (a: Account) => a.currentBalance ?? a.balance;
+const sum = (xs: Account[]) => (xs.length ? xs.reduce((a, x) => a + accountNow(x), 0) : null);
+
+/** Planned expenses that still need money: not cancelled, not fully paid. */
+export const openPlannedExpenses = (planned: PlannedPayment[]) =>
+  planned.filter((p) => p.direction === "expense" && p.status !== "cancelled" && p.left > 0);
 
 export function liveSnapshot(input: {
   today: string;
@@ -29,6 +43,7 @@ export function liveSnapshot(input: {
   accounts: Account[];
   obligations: Obligation[];
   incomes: IncomeSource[];
+  planned?: PlannedPayment[];
 }): LiveSnapshot {
   const usable = input.accounts.filter(usableAccount);
   const needsAttention = input.accounts.filter((a) => !usableAccount(a));
@@ -51,13 +66,18 @@ export function liveSnapshot(input: {
             name: o.name,
             endsAt: o.endsAt,
           })),
+          oneOff: openPlannedExpenses(input.planned ?? []).map((p) => ({
+            date: p.dueOn,
+            amount: p.left,
+            name: p.name,
+          })),
         });
   return {
     usable,
     needsAttention,
     liquid,
     savings,
-    total: usable.length ? usable.reduce((a, x) => a + x.balance, 0) : null,
+    total: sum(usable),
     confirmedPayments,
     confirmedIncomes,
     sts,
@@ -80,6 +100,7 @@ export function monthTotals(rows: Transaction[]) {
     expense = 0,
     own = 0;
   for (const t of rows) {
+    if (t.voided) continue;
     const k = txKind(t);
     if (k === "transfer_own") own += Math.abs(t.amount);
     else if (t.amount > 0) income += t.amount;

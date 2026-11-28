@@ -9,6 +9,7 @@ import { cautiousIncome, formatDay } from "@/lib/navigator-live";
 import { money } from "../model";
 import { Panel } from "../shared";
 import { Missing } from "./common";
+import { ObligationsPanel } from "./LivePayments";
 import type { LiveProps } from "./types";
 
 const t = ru.live.profile;
@@ -25,7 +26,7 @@ const ZONES = [
 const opt = (v: FormDataEntryValue | null) =>
   v === null || String(v).trim() === "" ? null : Number(v);
 
-export function LiveProfile({ me, accounts, incomes, today, notify }: LiveProps) {
+export function LiveProfile({ me, accounts, incomes, obligations, today, notify }: LiveProps) {
   const qc = useQueryClient();
   const saveMe = useMutation({
     mutationFn: (p: ProfilePatch) => api.updateMe(p),
@@ -154,6 +155,7 @@ export function LiveProfile({ me, accounts, incomes, today, notify }: LiveProps)
         )}
         <NewAccount today={today} notify={notify} />
       </Panel>
+      <ObligationsPanel obligations={obligations} notify={notify} />
     </>
   );
 }

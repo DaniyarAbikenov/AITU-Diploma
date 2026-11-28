@@ -15,6 +15,8 @@ export interface Account {
   kind?: AccountKind | null; confirmed?: boolean;
   /** false: no checkpoint or statement balance, `balance` is a placeholder and must not be shown as 0. */
   balanceKnown?: boolean; balanceAsOf?: string | null; balanceSource?: "manual" | "statement" | null;
+  /** Checkpoint plus manual operations after it; null when the balance is unknown. */
+  currentBalance?: number | null;
 }
 export interface AccountIn { bank: string; name: string; kind: AccountKind; currency?: "KZT" | "USD"; balance?: number | null; balanceAsOf?: string | null }
 export interface Checkpoint { id: string; accountId: string; balance: number; asOf: string; source: "manual" | "statement" }
@@ -26,7 +28,22 @@ export interface Transaction {
   merchant: string; categoryId: string; accountId: string; needsReview: boolean; internal?: boolean;
   /** Effective type: the user's decision when kindSource = "user", otherwise derived from the import. */
   kind?: TxKind; kindSource?: "user" | "auto";
+  source?: "import" | "manual"; note?: string | null; voided?: boolean;
+  /** Imported values when the user corrected amount or date (the original is never overwritten). */
+  original?: { amount: number; date: string } | null;
 }
+export interface TransactionIn { accountId: string; date: string; amount: number; merchant: string; category?: string | null; kind?: TxKind | null; note?: string | null }
+export type TransactionPatch = Partial<Pick<TransactionIn, "accountId" | "date" | "amount" | "merchant" | "note">> & { category?: string };
+export interface TransactionEdit { action: "create" | "update" | "void" | "restore" | "delete"; before?: Record<string, unknown> | null; after?: Record<string, unknown> | null; at: string }
+export interface PlannedPayment {
+  id: string; name: string; direction: "expense" | "income"; amount: number; dueOn: string; dueTo?: string | null;
+  repeat: "once" | "yearly"; categoryId?: string | null; accountId?: string | null; mandatory: boolean; movable: boolean;
+  status: "planned" | "partial" | "paid" | "cancelled"; paid: number; left: number;
+  settlements: { transactionId: string; amount: number; period: string }[];
+}
+export type PlannedIn = Pick<PlannedPayment, "name" | "direction" | "amount" | "dueOn" | "repeat" | "mandatory" | "movable"> & { dueTo?: string | null; category?: string | null; accountId?: string | null };
+export type PlannedPatch = Partial<PlannedIn> & { cancelled?: boolean };
+export interface SettleIn { transactionId?: string; amount?: number; accountId?: string; date?: string }
 export interface TxQuery { from?: string; to?: string; account?: string; bank?: string; q?: string }
 
 export interface ImportReport { id: string; status: "processing" | "done" | "failed"; parsed: number; needsReview: number; period: { from: string; to: string }; bank: string; warnings?: string[] }
@@ -47,7 +64,8 @@ export interface DashboardSummary { month: string; income: number; expense: numb
 
 export interface Insight { id: string; status: Status; title: string; why: string; action: string; to: string }
 
-export interface Obligation { id: string; name: string; kind: "credit" | "installment" | "rent" | "subscription" | "utility"; amount: number; dayOfMonth: number; endsAt?: string | null; confirmed: boolean; rejected?: boolean }
+export interface Obligation { id: string; name: string; kind: "credit" | "installment" | "rent" | "subscription" | "utility"; amount: number; dayOfMonth: number; endsAt?: string | null; confirmed: boolean; rejected?: boolean; categoryId?: string | null; debtLeft?: number | null }
+export type ObligationIn = Pick<Obligation, "name" | "kind" | "amount" | "dayOfMonth"> & { endsAt?: string | null; category?: string | null; debtLeft?: number | null };
 export type Decision = { confirmed?: boolean; rejected?: boolean };
 export interface ObligationsCalendar { months: { month: string; credit: number; installment: number; regular: number }[]; income: number }
 export interface DtiPoint { month: string; dti: number }

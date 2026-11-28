@@ -2,7 +2,7 @@
 import type {
   Account, BalancePoint, Category, CityPrice, DashboardSummary, DtiPoint, Goal, GoalProjection, ImportReport, IncomeSource,
   Insight, MacroIndicator, MerchantRule, MonthEndForecast, BalanceForecast, Obligation, ObligationsCalendar, PersonalInflation,
-  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction, User, AccountIn, TxKind, TxQuery, Decision,
+  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction, User, AccountIn, TxKind, TxQuery, Decision, TransactionIn, TransactionPatch, PlannedPayment, PlannedIn, PlannedPatch, SettleIn,
 } from "./types";
 
 export const AS_OF = "2026-10-19";
@@ -87,6 +87,7 @@ export const db = {
   ] as Goal[],
   scenarios: [] as SavedScenario[],
   dismissed: new Set<string>(),
+  planned: [] as PlannedPayment[],
   me: { id: "u1", email: "mock@example.com", name: "Айгерим", city: "Алматы", currency: "KZT", timezone: "Asia/Almaty", plannedIncome: null, essentialExpenses: null, workHours: null } as User,
 };
 
@@ -295,4 +296,40 @@ export function goalProjection(g: Goal): GoalProjection {
 
 export function fakeImport(bank: string): ImportReport {
   return { id: "imp-" + Date.now(), status: "done", parsed: db.transactions.length, needsReview: db.transactions.filter((t) => t.needsReview).length, period: { from: addDays(AS_OF, -110), to: AS_OF }, bank };
+}
+
+export function createTx(t: TransactionIn): Transaction {
+  const tx: Transaction = { id: "m" + Date.now(), date: t.date, amount: t.amount, currency: "KZT", merchant: t.merchant, categoryId: t.category ?? "other",
+    accountId: t.accountId, needsReview: false, kind: t.kind ?? (t.amount > 0 ? "income" : "expense"), kindSource: "user", source: "manual", note: t.note ?? null };
+  db.transactions.unshift(tx);
+  return tx;
+}
+export function updateTx(id: string, p: TransactionPatch): Transaction {
+  const t = db.transactions.find((x) => x.id === id)!;
+  const { category, ...rest } = p;
+  return Object.assign(t, rest, category ? { categoryId: category } : {});
+}
+const plannedStatus = (p: PlannedPayment): PlannedPayment => {
+  p.left = Math.max(0, p.amount - p.paid);
+  if (p.status !== "cancelled") p.status = p.left === 0 ? "paid" : p.paid > 0 ? "partial" : "planned";
+  return p;
+};
+export function addPlanned(i: PlannedIn): PlannedPayment {
+  const p: PlannedPayment = { ...i, categoryId: i.category ?? null, id: "p" + Date.now(), status: "planned", paid: 0, left: i.amount, settlements: [] };
+  db.planned.push(p);
+  return p;
+}
+export function updatePlanned(id: string, patch: PlannedPatch): PlannedPayment {
+  const p = db.planned.find((x) => x.id === id)!;
+  const { cancelled, category, ...rest } = patch;
+  Object.assign(p, rest, category !== undefined ? { categoryId: category } : {});
+  if (cancelled !== undefined) p.status = cancelled ? "cancelled" : "planned";
+  return plannedStatus(p);
+}
+export function settlePlanned(id: string, s: SettleIn): PlannedPayment {
+  const p = db.planned.find((x) => x.id === id)!;
+  const amount = s.amount ?? p.left;
+  p.paid += amount;
+  p.settlements.push({ transactionId: s.transactionId ?? "m" + Date.now(), amount, period: p.dueOn });
+  return plannedStatus(p);
 }

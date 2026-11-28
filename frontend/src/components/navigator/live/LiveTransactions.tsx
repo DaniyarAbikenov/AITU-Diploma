@@ -1,26 +1,17 @@
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowDownLeft, ArrowLeftRight, Search, Send, Wallet } from "lucide-react";
-import { api, q } from "@/api/client";
+import { q } from "@/api/client";
 import type { Account, Transaction, TxKind } from "@/api/types";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { bankName, ru } from "@/i18n/ru";
 import { formatMonth, monthRange, monthTotals, recentMonths, txKind } from "@/lib/navigator-live";
 import { money } from "../model";
 import { Panel } from "../shared";
-import { Missing } from "./common";
+import { TxDialog } from "./forms";
 import type { LiveProps } from "./types";
 
 const t = ru.live.transactions;
 const KINDS = Object.keys(ru.txKind) as TxKind[];
-const autoKind = (x: Transaction): TxKind =>
-  x.internal ? "transfer_own" : x.amount > 0 ? "income" : "expense";
 
 function KindIcon({ kind }: { kind: TxKind }) {
   if (kind === "transfer_own") return <ArrowLeftRight size={20} />;
@@ -60,8 +51,14 @@ export function TxList({
             <span className="nav-transaction-name">
               <strong>{x.merchant}</strong>
               <small>
+                {x.voided ? `${ru.crud.tx.voided} · ` : ""}
                 {ru.txKind[kind]}
-                {x.kindSource === "user" ? " · вручную" : ""} · {a ? bankName(a.bank) : "—"} ·{" "}
+                {x.source === "manual"
+                  ? ` · ${ru.crud.tx.manual}`
+                  : x.kindSource === "user"
+                    ? " · тип задан вами"
+                    : ""}{" "}
+                · {a ? bankName(a.bank) : "—"} ·{" "}
                 {new Date(x.date + "T12:00:00Z").toLocaleDateString("ru-RU", {
                   day: "numeric",
                   month: "short",
@@ -186,100 +183,14 @@ export function LiveTransactions({ accounts, today, notify }: LiveProps) {
           </div>
         )}
       </Panel>
-      <KindDialog
+      <TxDialog
         tx={picked}
+        open={!!picked}
+        accounts={accounts}
+        today={today}
         onClose={() => setPicked(null)}
-        onSaved={() => {
-          setPicked(null);
-          notify(ru.live.profile.saved);
-        }}
+        notify={notify}
       />
     </>
-  );
-}
-
-function KindDialog({
-  tx,
-  onClose,
-  onSaved,
-}: {
-  tx: Transaction | null;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const qc = useQueryClient();
-  const save = useMutation({
-    mutationFn: (v: { kind: TxKind | null; saveRule: boolean }) =>
-      api.setTxKind(tx!.id, v.kind, v.saveRule),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["resilience"] });
-      onSaved();
-    },
-  });
-  return (
-    <Dialog open={!!tx} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="navigator nav-dialog">
-        <DialogHeader>
-          <DialogTitle>{t.editTitle}</DialogTitle>
-          <DialogDescription>{t.editHint}</DialogDescription>
-        </DialogHeader>
-        {tx && (
-          <form
-            className="nav-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const f = new FormData(e.currentTarget);
-              save.mutate({
-                kind: String(f.get("kind")) as TxKind,
-                saveRule: f.get("rule") === "on",
-              });
-            }}
-          >
-            <p>
-              <strong>{tx.merchant}</strong> · {money(Math.abs(tx.amount))} · {tx.date}
-            </p>
-            <p className="nav-small">
-              {tx.kindSource === "user" ? t.user + ". " : ""}
-              {t.auto(ru.txKind[autoKind(tx)])}
-            </p>
-            <label className="nav-field">
-              {t.kind}
-              <select name="kind" defaultValue={txKind(tx)}>
-                {KINDS.map((k) => (
-                  <option key={k} value={k}>
-                    {ru.txKind[k]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="nav-checkbox">
-              <input type="checkbox" name="rule" />
-              {t.saveRule(tx.merchant)}
-            </label>
-            <div className="nav-actions">
-              <button className="nav-primary" disabled={save.isPending}>
-                {ru.common.save}
-              </button>
-              {tx.kindSource === "user" && (
-                <button
-                  type="button"
-                  className="nav-secondary"
-                  disabled={save.isPending}
-                  onClick={() => save.mutate({ kind: null, saveRule: false })}
-                >
-                  {t.resetAuto}
-                </button>
-              )}
-            </div>
-            {save.isError && (
-              <p className="nav-error" role="alert">
-                {save.error.message}
-              </p>
-            )}
-          </form>
-        )}
-      </DialogContent>
-    </Dialog>
   );
 }
