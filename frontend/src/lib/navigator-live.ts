@@ -146,8 +146,9 @@ export function monthTotals(rows: Transaction[], rates: Record<string, number> =
     }
     const v = t.amount * r;
     const k = txKind(t);
-    if (k === "transfer_own") own += Math.abs(v);
-    else if (v > 0) income += v;
+    if (k === "transfer_own") {
+      if (v < 0) own += -v; // one transfer has two legs: count the money that left an account once
+    } else if (v > 0) income += v;
     else expense += -v;
   }
   return {
