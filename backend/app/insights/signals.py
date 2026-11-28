@@ -60,6 +60,16 @@ def money(v_minor: int, currency: str = "KZT") -> dict:
     return {"value_minor": int(v_minor), "currency": currency}
 
 
+def plural(n: int, one: str, few: str, many: str) -> str:
+    a, b = abs(n) % 100, abs(n) % 10
+    word = many if 10 < a < 20 else one if b == 1 else few if 1 < b < 5 else many
+    return f"{n} {word}"
+
+
+def ops(n: int) -> str:
+    return plural(n, "операция", "операции", "операций")
+
+
 def tenge(v_minor: int) -> str:
     v = round(v_minor / 100)
     return f"{v:,}".replace(",", " ") + " ₸"

@@ -34,6 +34,12 @@ class Snapshot:
     user: User
     as_of: date = field(default_factory=app_today)
 
+    @cached_property
+    def th(self):
+        from app.insights.settings import for_user
+
+        return for_user(self.user.insight_settings)
+
     @property
     def id(self) -> str:
         return f"u{self.user.id}@{self.as_of.isoformat()}"
@@ -115,6 +121,53 @@ class Snapshot:
         from app.routers.planned import out
 
         return to_minor(out(self.db, p).left)
+
+    def amount(self, t: Transaction) -> int:
+        return t.user_amount_minor if t.user_amount_minor is not None else t.amount_minor
+
+    def day(self, t: Transaction):
+        return t.user_booked_on or t.booked_on
+
+    def is_own_transfer(self, t: Transaction) -> bool:
+        return t.user_kind == "transfer_own" or (t.user_kind is None and t.internal)
+
+    def cashflow(self, start, end, currency: str = "KZT") -> list[Transaction]:
+        """Income and spending operations in [start, end] (own transfers excluded)."""
+        return [t for t in self.transactions if start <= self.day(t) <= end and t.currency == currency
+                and not self.is_own_transfer(t)]
+
+    @property
+    def essential_minor(self) -> int | None:
+        return self.user.essential_expenses_minor
+
+    @cached_property
+    def income_floor_minor(self) -> int | None:
+        """Cautious monthly income: the lower bound of each confirmed payout (FR-29), None when none is confirmed."""
+        inc = self.confirmed_incomes
+        return sum(i.amount_min_minor or i.amount_minor for i in inc) if inc else None
+
+    def obligation_month_minor(self, o: Obligation, month: str) -> int:
+        r = self.rule_amount_minor("obligation", o.id, month)
+        return o.amount_minor if r is None else r
+
+    @cached_property
+    def obligations_month_minor(self) -> int:
+        return sum(self.obligation_month_minor(o, self.month) for o in self.obligations
+                   if o.confirmed and (not o.ends_at or o.ends_at >= self.month))
+
+    @cached_property
+    def savings_plan_minor(self) -> int:
+        return sum(g.monthly_minor for g in self.goals if g.saved_minor < g.target_minor)
+
+    @cached_property
+    def savings_available_minor(self) -> int | None:
+        accs = [a for a in self.usable_accounts if a.kind in ("savings", "deposit")]
+        return sum(self.available_kzt_minor(a) for a in accs) if accs else None
+
+    @cached_property
+    def savings_total_minor(self) -> int | None:
+        accs = [a for a in self.usable_accounts if a.kind in ("savings", "deposit")]
+        return sum(to_minor(self.account_views[a.id].currentBalanceKzt) for a in accs) if accs else None
 
     # ---- derived, single source of truth with the overview
     @cached_property

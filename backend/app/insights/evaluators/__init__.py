@@ -1,2 +1,10 @@
-"""Signal evaluators grouped by module of the knowledge base."""
-from app.insights.evaluators import data_quality  # noqa: F401
+"""Signal evaluators grouped by module of the knowledge base; importing registers them."""
+from app.insights.evaluators import (  # noqa: F401
+    calendar,
+    cashflow,
+    data_quality,
+    debts_reserve,
+    goals_events,
+    plan,
+    transactions,
+)

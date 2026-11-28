@@ -1,7 +1,7 @@
 """Onboarding and data quality: K001–K010 (R001–R010)."""
 from datetime import timedelta
 
-from app.insights.signals import Signal, money, needs, not_ready, signal, tenge
+from app.insights.signals import Signal, money, needs, not_ready, ops, signal, tenge
 from app.insights.snapshot import Snapshot
 
 STALE_DAYS = 7  # a balance older than this is not fresh enough for daily numbers (user setting later)
@@ -67,7 +67,7 @@ def r004(s: Snapshot) -> Signal:
     return Signal("R004", ready=True, triggered=share >= 0.1, evidence_valid=True,
                   values={"share": round(share, 3), "uncertain": money(amount), "total": money(total)},
                   evidence_ids=[f"transaction:{t.id}" for t in unsure[:20]],
-                  summary=f"За 30 дней {len(unsure)} операций на {tenge(amount)} ({round(share * 100)} % расходов) "
+                  summary=f"За 30 дней {ops(len(unsure))} на {tenge(amount)} ({round(share * 100)} % расходов) "
                           f"с неуверенной категорией.",
                   entity="categories", period=s.month, root_cause="uncertain_categories", impact_minor=amount,
                   effort=0.3)
