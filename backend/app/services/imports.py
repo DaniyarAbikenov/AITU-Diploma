@@ -7,8 +7,18 @@ from sqlalchemy.orm import Session
 
 from app.catalog import SUBSCRIPTION_HINTS
 from app.engine.categorization import categorize
-from app.models import Account, ImportBatch, IncomeSource, MerchantRule, Obligation, Transaction, User
+from app.models import (
+    Account,
+    AccountCheckpoint,
+    ImportBatch,
+    IncomeSource,
+    MerchantRule,
+    Obligation,
+    Transaction,
+    User,
+)
 from app.parsers.base import ParsedStatement
+from app.services.accounts import guess_kind
 
 
 def user_rules(db: Session, user: User) -> dict[str, str]:
@@ -21,12 +31,31 @@ def get_or_create_account(db: Session, user: User, parsed: ParsedStatement) -> A
                                           Account.name == parsed.account_name))
     if acc is None:
         acc = Account(user_id=user.id, bank=parsed.bank, name=parsed.account_name, currency="KZT",
-                      balance_minor=parsed.closing_balance_minor or 0)
+                      balance_minor=parsed.closing_balance_minor or 0, kind=guess_kind(parsed.account_name),
+                      confirmed=False)
         db.add(acc)
         db.flush()
     elif parsed.closing_balance_minor is not None and not _older_than_known(db, acc, parsed):
         acc.balance_minor = parsed.closing_balance_minor  # the newest statement carries the current balance
     return acc
+
+
+def record_statement_checkpoint(db: Session, acc: Account, parsed: ParsedStatement) -> None:
+    """The closing balance from the statement header becomes a dated checkpoint (FR-12), once per statement."""
+    end = parsed.period_to or max((r.booked_on for r in parsed.rows), default=None)
+    if parsed.closing_balance_minor is None or end is None:
+        return
+    exists = db.scalar(select(AccountCheckpoint.id).where(
+        AccountCheckpoint.account_id == acc.id, AccountCheckpoint.as_of == end, AccountCheckpoint.source == "statement",
+        AccountCheckpoint.balance_minor == parsed.closing_balance_minor))
+    if not exists:
+        db.add(AccountCheckpoint(user_id=acc.user_id, account_id=acc.id, balance_minor=parsed.closing_balance_minor,
+                                 as_of=end, source="statement"))
+
+
+def user_kind_rules(db: Session, user: User) -> dict[str, str]:
+    rows = db.scalars(select(MerchantRule).where(MerchantRule.user_id == user.id, MerchantRule.kind.is_not(None))).all()
+    return {r.merchant: r.kind for r in rows}
 
 
 def _older_than_known(db: Session, acc: Account, parsed: ParsedStatement) -> bool:
@@ -47,6 +76,7 @@ def import_statement(db: Session, user: User, parsed: ParsedStatement, source: s
     db.add(batch)
     db.flush()
     rules = user_rules(db, user)
+    kind_rules = user_kind_rules(db, user)
     seen: Counter = Counter()
     added = review = 0
     dates = []
@@ -62,7 +92,7 @@ def import_statement(db: Session, user: User, parsed: ParsedStatement, source: s
         db.add(Transaction(user_id=user.id, account_id=acc.id, batch_id=batch.id, booked_on=row.booked_on,
                            amount_minor=row.amount_minor, currency=row.currency, merchant=row.merchant,
                            category_id=cat.category_id, category_source=cat.source, needs_review=cat.needs_review,
-                           internal=row.internal, dedup_key=key))
+                           internal=row.internal, user_kind=kind_rules.get(row.merchant), dedup_key=key))
         added += 1
         review += cat.needs_review
     batch.parsed, batch.needs_review = added, review
@@ -70,6 +100,7 @@ def import_statement(db: Session, user: User, parsed: ParsedStatement, source: s
         batch.period_from, batch.period_to = parsed.period_from, parsed.period_to
     elif dates:
         batch.period_from, batch.period_to = min(dates), max(dates)
+    record_statement_checkpoint(db, acc, parsed)
     db.flush()
     mark_internal_transfers(db, user)
     detect_recurring(db, user)

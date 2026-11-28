@@ -27,6 +27,11 @@ class UserOut(BaseModel):
     name: str
     city: str
     currency: Literal["KZT"] = "KZT"
+    timezone: str = "Asia/Almaty"
+    # null = not provided yet; the UI asks for it instead of showing zero
+    plannedIncome: int | float | None = None
+    essentialExpenses: int | float | None = None
+    workHours: int | None = None
 
 
 class AuthOut(BaseModel):
@@ -36,8 +41,13 @@ class AuthOut(BaseModel):
 
 
 class ProfilePatch(BaseModel):
-    name: str | None = None
-    city: str | None = None
+    """Only the fields sent are changed. Sending null for a plan field marks it as unknown again."""
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    city: str | None = Field(default=None, max_length=80)
+    timezone: str | None = Field(default=None, max_length=40)
+    plannedIncome: float | None = Field(default=None, ge=0, le=1e12)
+    essentialExpenses: float | None = Field(default=None, ge=0, le=1e12)
+    workHours: int | None = Field(default=None, ge=1, le=744)
 
 
 class Ok(BaseModel):
@@ -45,12 +55,53 @@ class Ok(BaseModel):
 
 
 # ---- accounts / transactions
+AccountKind = Literal["current", "savings", "cash"]
+TxKind = Literal["expense", "income", "income_salary", "income_other", "transfer_own", "transfer_third_party"]
+
+
 class AccountOut(BaseModel):
     id: str
     bank: str
     name: str
     currency: Currency
     balance: int | float
+    kind: AccountKind | None = None
+    confirmed: bool = False
+    # false when no checkpoint or statement balance exists: `balance` is then a placeholder, not a real 0
+    balanceKnown: bool = False
+    balanceAsOf: str | None = None
+    balanceSource: Literal["manual", "statement"] | None = None
+
+
+class AccountIn(BaseModel):
+    bank: str = Field(min_length=1, max_length=80)
+    name: str = Field(min_length=1, max_length=120)
+    kind: AccountKind
+    currency: Currency = "KZT"
+    balance: float | None = Field(default=None, ge=-1e12, le=1e12)
+    balanceAsOf: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+class AccountPatch(BaseModel):
+    bank: str | None = Field(default=None, min_length=1, max_length=80)
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    kind: AccountKind | None = None
+    currency: Currency | None = None
+    confirmed: bool | None = None
+
+
+class CheckpointIn(BaseModel):
+    balance: float = Field(ge=-1e12, le=1e12)
+    asOf: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    source: Literal["manual", "statement"] = "manual"
+
+
+class CheckpointOut(BaseModel):
+    id: str
+    accountId: str
+    balance: int | float
+    asOf: str
+    source: Literal["manual", "statement"]
 
 
 class CategoryOut(BaseModel):
@@ -69,6 +120,15 @@ class TransactionOut(BaseModel):
     accountId: str
     needsReview: bool
     internal: bool = False
+    # effective operation type: the user's decision if any, otherwise derived from the import
+    kind: TxKind = "expense"
+    kindSource: Literal["user", "auto"] = "auto"
+
+
+class TxKindIn(BaseModel):
+    """null removes the user's decision and returns to the imported classification."""
+    kind: TxKind | None
+    saveRule: bool = False
 
 
 class RecategorizeIn(BaseModel):
@@ -188,6 +248,7 @@ class ObligationOut(BaseModel):
     dayOfMonth: int
     endsAt: str | None = None
     confirmed: bool
+    rejected: bool = False
 
 
 class ObligationIn(BaseModel):
@@ -199,7 +260,9 @@ class ObligationIn(BaseModel):
 
 
 class ConfirmIn(BaseModel):
-    confirmed: bool
+    """confirmed=true accepts a detected item; rejected=true marks it as not real (it then leaves the plan)."""
+    confirmed: bool | None = None
+    rejected: bool | None = None
 
 
 class CalendarMonth(BaseModel):
@@ -225,6 +288,27 @@ class IncomeSourceOut(BaseModel):
     amount: int | float
     dayOfMonth: int
     confirmed: bool
+    rejected: bool = False
+    amountMin: int | float | None = None
+    amountMax: int | float | None = None
+
+
+class IncomeSourceIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    amount: float = Field(gt=0, le=1e12)
+    dayOfMonth: int = Field(ge=1, le=31)
+    amountMin: float | None = Field(default=None, gt=0, le=1e12)
+    amountMax: float | None = Field(default=None, gt=0, le=1e12)
+
+
+class IncomeSourcePatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    amount: float | None = Field(default=None, gt=0, le=1e12)
+    dayOfMonth: int | None = Field(default=None, ge=1, le=31)
+    amountMin: float | None = Field(default=None, gt=0, le=1e12)
+    amountMax: float | None = Field(default=None, gt=0, le=1e12)
+    confirmed: bool | None = None
+    rejected: bool | None = None
 
 
 # ---- resilience / scenarios

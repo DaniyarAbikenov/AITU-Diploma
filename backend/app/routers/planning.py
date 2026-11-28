@@ -17,13 +17,16 @@ from app.schemas import (
     GoalIn,
     GoalOut,
     GoalProjectionOut,
+    IncomeSourceIn,
     IncomeSourceOut,
+    IncomeSourcePatch,
     ObligationIn,
     ObligationOut,
     ObligationsCalendarOut,
     Ok,
 )
 from app.services import goals as goal_svc
+from app.services.accounts import is_cashflow
 from app.services.ledger import add_months, month_key
 
 router = APIRouter(tags=["planning"])
@@ -31,7 +34,20 @@ router = APIRouter(tags=["planning"])
 
 def ob_out(o: Obligation) -> ObligationOut:
     return ObligationOut(id=str(o.id), name=o.name, kind=o.kind, amount=to_major(o.amount_minor), dayOfMonth=o.day_of_month,
-                         endsAt=o.ends_at, confirmed=o.confirmed)
+                         endsAt=o.ends_at, confirmed=o.confirmed, rejected=o.rejected)
+
+
+def _apply_decision(row, body) -> None:
+    """Confirm and reject are exclusive: confirming clears a rejection and the other way round."""
+    if body.rejected:
+        row.rejected, row.confirmed = True, False
+    elif body.confirmed:
+        row.confirmed, row.rejected = True, False
+    else:
+        if body.confirmed is False:
+            row.confirmed = False
+        if body.rejected is False:
+            row.rejected = False
 
 
 def _own(db: Session, model, item_id: int, user: User, what: str):
@@ -59,7 +75,7 @@ def add_obligation(body: ObligationIn, u: User = Depends(current_user), db: Sess
 @router.patch("/obligations/{ob_id}", response_model=ObligationOut)
 def confirm_obligation(ob_id: int, body: ConfirmIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
     o = _own(db, Obligation, ob_id, u, "Обязательство")
-    o.confirmed = body.confirmed
+    _apply_decision(o, body)
     db.commit()
     return ob_out(o)
 
@@ -72,13 +88,14 @@ def delete_obligation(ob_id: int, u: User = Depends(current_user), db: Session =
 
 
 def _monthly_income(db: Session, u: User) -> float:
-    return sum(i.amount_minor for i in db.scalars(select(IncomeSource).where(IncomeSource.user_id == u.id))) / 100
+    rows = db.scalars(select(IncomeSource).where(IncomeSource.user_id == u.id, IncomeSource.rejected.is_(False)))
+    return sum(i.amount_minor for i in rows) / 100
 
 
 @router.get("/obligations/calendar", response_model=ObligationsCalendarOut)
 def calendar(months: int = 12, u: User = Depends(current_user), db: Session = Depends(get_db)):
     """Planned payments for the next `months` months, starting with the month after today."""
-    obs = db.scalars(select(Obligation).where(Obligation.user_id == u.id)).all()
+    obs = db.scalars(select(Obligation).where(Obligation.user_id == u.id, Obligation.rejected.is_(False))).all()
     first = add_months(as_of().replace(day=1), 1)
     out = []
     for i in range(max(1, min(months, 36))):
@@ -102,7 +119,7 @@ def dti_history(months: int = 12, u: User = Depends(current_user), db: Session =
     income = dict.fromkeys(keys, 0)
     debt = dict.fromkeys(keys, 0)
     rows = db.execute(select(Transaction.booked_on, Transaction.amount_minor, Transaction.category_id).where(
-        Transaction.user_id == u.id, Transaction.internal.is_(False))).all()
+        Transaction.user_id == u.id, is_cashflow())).all()
     for on, amount, cat in rows:
         k = month_key(on)
         if k in income:
@@ -114,19 +131,62 @@ def dti_history(months: int = 12, u: User = Depends(current_user), db: Session =
 
 
 # ---- income
+def inc_out(i: IncomeSource) -> IncomeSourceOut:
+    return IncomeSourceOut(id=str(i.id), name=i.name, amount=to_major(i.amount_minor), dayOfMonth=i.day_of_month,
+                           confirmed=i.confirmed, rejected=i.rejected,
+                           amountMin=None if i.amount_min_minor is None else to_major(i.amount_min_minor),
+                           amountMax=None if i.amount_max_minor is None else to_major(i.amount_max_minor))
+
+
+def _check_range(i: IncomeSource) -> None:
+    lo, hi = i.amount_min_minor, i.amount_max_minor
+    if lo is not None and hi is not None and lo > hi:
+        raise ApiError(422, "Нижняя граница дохода больше верхней")
+
+
 @router.get("/income-sources", response_model=list[IncomeSourceOut])
 def income_sources(u: User = Depends(current_user), db: Session = Depends(get_db)):
-    rows = db.scalars(select(IncomeSource).where(IncomeSource.user_id == u.id).order_by(IncomeSource.id))
-    return [IncomeSourceOut(id=str(i.id), name=i.name, amount=to_major(i.amount_minor), dayOfMonth=i.day_of_month,
-                            confirmed=i.confirmed) for i in rows]
+    rows = db.scalars(select(IncomeSource).where(IncomeSource.user_id == u.id).order_by(IncomeSource.day_of_month, IncomeSource.id))
+    return [inc_out(i) for i in rows]
+
+
+@router.post("/income-sources", response_model=IncomeSourceOut, status_code=201)
+def add_income(body: IncomeSourceIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    """A payout the user enters (for example the second salary payment of the month). Confirmed by definition."""
+    i = IncomeSource(user_id=u.id, name=body.name.strip(), amount_minor=to_minor(body.amount), day_of_month=body.dayOfMonth,
+                     amount_min_minor=None if body.amountMin is None else to_minor(body.amountMin),
+                     amount_max_minor=None if body.amountMax is None else to_minor(body.amountMax), confirmed=True)
+    _check_range(i)
+    db.add(i)
+    db.commit()
+    return inc_out(i)
 
 
 @router.patch("/income-sources/{inc_id}", response_model=IncomeSourceOut)
-def confirm_income(inc_id: int, body: ConfirmIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
+def update_income(inc_id: int, body: IncomeSourcePatch, u: User = Depends(current_user), db: Session = Depends(get_db)):
     i = _own(db, IncomeSource, inc_id, u, "Источник дохода")
-    i.confirmed = body.confirmed
+    sent = body.model_fields_set
+    if body.name:
+        i.name = body.name.strip()
+    if body.amount is not None:
+        i.amount_minor = to_minor(body.amount)
+    if body.dayOfMonth is not None:
+        i.day_of_month = body.dayOfMonth
+    if "amountMin" in sent:
+        i.amount_min_minor = None if body.amountMin is None else to_minor(body.amountMin)
+    if "amountMax" in sent:
+        i.amount_max_minor = None if body.amountMax is None else to_minor(body.amountMax)
+    _check_range(i)
+    _apply_decision(i, body)
     db.commit()
-    return IncomeSourceOut(id=str(i.id), name=i.name, amount=to_major(i.amount_minor), dayOfMonth=i.day_of_month, confirmed=i.confirmed)
+    return inc_out(i)
+
+
+@router.delete("/income-sources/{inc_id}", response_model=Ok)
+def delete_income(inc_id: int, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    db.delete(_own(db, IncomeSource, inc_id, u, "Источник дохода"))
+    db.commit()
+    return Ok()
 
 
 # ---- goals

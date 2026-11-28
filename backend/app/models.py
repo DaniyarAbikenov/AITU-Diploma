@@ -1,7 +1,19 @@
 """Data model (see docs/architecture.md section 3). Money columns are integer minor units."""
 from datetime import date, datetime, timezone
 
-from sqlalchemy import JSON, BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    false,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -19,6 +31,11 @@ class User(Base):
     city: Mapped[str] = mapped_column(String(80), default="Алматы")
     currency: Mapped[str] = mapped_column(String(3), default="KZT")
     password_hash: Mapped[str] = mapped_column(String(255))
+    # Personal plan. NULL means "not provided yet" and is never treated as zero (FR-04, FR-25).
+    timezone: Mapped[str] = mapped_column(String(40), default="Asia/Almaty", server_default="Asia/Almaty")
+    planned_income_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    essential_expenses_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    work_hours_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
@@ -30,6 +47,22 @@ class Account(Base):
     name: Mapped[str] = mapped_column(String(120))
     currency: Mapped[str] = mapped_column(String(3), default="KZT")
     balance_minor: Mapped[int] = mapped_column(BigInteger, default=0)
+    kind: Mapped[str | None] = mapped_column(String(20), nullable=True)  # current | savings | cash; NULL = not set
+    # accounts created by an import are proposals until the user confirms them in the UI
+    confirmed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+
+
+class AccountCheckpoint(Base):
+    """A known balance on a date: entered by the user or taken from a statement header (closing balance).
+    The account balance is the latest checkpoint, never a sum of operations (FR-12)."""
+    __tablename__ = "account_checkpoints"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    balance_minor: Mapped[int] = mapped_column(BigInteger)
+    as_of: Mapped[date] = mapped_column(Date)
+    source: Mapped[str] = mapped_column(String(20), default="manual")  # manual | statement
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class Category(Base):
@@ -72,6 +105,9 @@ class Transaction(Base):
     category_source: Mapped[str] = mapped_column(String(10), default="rule")  # rule | model | user
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
     internal: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The user's own decision about the operation type. It overrides the imported `internal` flag and the
+    # amount sign; the imported original is kept untouched (FR-10, FR-17).
+    user_kind: Mapped[str | None] = mapped_column(String(30), nullable=True)
     dedup_key: Mapped[str] = mapped_column(String(64))
 
 
@@ -82,6 +118,7 @@ class MerchantRule(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     merchant: Mapped[str] = mapped_column(String(200))
     category_id: Mapped[str] = mapped_column(ForeignKey("categories.id"))
+    kind: Mapped[str | None] = mapped_column(String(30), nullable=True)  # operation type for future imports
 
 
 class Obligation(Base):
@@ -95,6 +132,7 @@ class Obligation(Base):
     ends_at: Mapped[str | None] = mapped_column(String(7), nullable=True)  # YYYY-MM
     confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     detected: Mapped[bool] = mapped_column(Boolean, default=False)
+    rejected: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class IncomeSource(Base):
@@ -106,6 +144,10 @@ class IncomeSource(Base):
     day_of_month: Mapped[int] = mapped_column(Integer)
     confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     detected: Mapped[bool] = mapped_column(Boolean, default=False)
+    rejected: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # The amount varies from payout to payout: cautious plans use the lower bound (FR-29).
+    amount_min_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    amount_max_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
 
 class Goal(Base):

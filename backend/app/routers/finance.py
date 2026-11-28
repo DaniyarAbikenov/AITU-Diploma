@@ -33,6 +33,7 @@ from app.schemas import (
 from app.services import insights as insight_svc
 from app.services import macro as macro_svc
 from app.services import scenarios as scenario_svc
+from app.services.accounts import is_cashflow
 from app.services.ledger import Context, add_months, build_context, month_key
 
 router = APIRouter(tags=["finance"])
@@ -55,7 +56,7 @@ def summary(month: str = Query(pattern=r"^\d{4}-\d{2}$"), u: User = Depends(curr
         raise ApiError(422, "month: некорректный месяц")
     prev = month_key(add_months(date(y, m, 1), -1))
     rows = db.execute(select(Transaction.booked_on, Transaction.amount_minor, Transaction.category_id).where(
-        Transaction.user_id == u.id, Transaction.internal.is_(False))).all()
+        Transaction.user_id == u.id, is_cashflow())).all()
     income = expense = prev_expense = 0
     cur_cat: dict[str, int] = {}
     prev_cat: dict[str, int] = {}

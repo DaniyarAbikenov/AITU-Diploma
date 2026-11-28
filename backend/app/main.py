@@ -9,6 +9,7 @@ from app import models  # noqa: F401  (registers tables)
 from app.core.config import as_of, settings
 from app.core.db import Base, SessionLocal, engine
 from app.core.errors import install_error_handlers
+from app.core.migrate import add_missing_columns
 from app.routers import auth, data, finance, macro, planning
 from app.seed import ensure_reference_data, seed_all
 from app.services import nbk
@@ -35,6 +36,7 @@ async def _rates_loop() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(engine)
+    add_missing_columns(engine)
     with SessionLocal() as db:
         if settings.seed_demo:
             seed_all(db)

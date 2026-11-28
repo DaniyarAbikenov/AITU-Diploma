@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.catalog import FIXED_CATEGORIES
 from app.models import Account, Category, IncomeSource, MacroSeries, Obligation, Transaction, User
+from app.services.accounts import is_cashflow
 
 WINDOW_DAYS = 90
 
@@ -76,16 +77,16 @@ def build_context(db: Session, user: User, as_of: date) -> Context:
     accounts = db.scalars(select(Account).where(Account.user_id == user.id, Account.currency == "KZT")).all()
     obligations = [
         Ob(o.name, o.kind, o.amount_minor / 100, o.day_of_month, o.ends_at)
-        for o in db.scalars(select(Obligation).where(Obligation.user_id == user.id))
+        for o in db.scalars(select(Obligation).where(Obligation.user_id == user.id, Obligation.rejected.is_(False)))
     ]
     incomes = [
         Inc(i.name, i.amount_minor / 100, i.day_of_month)
-        for i in db.scalars(select(IncomeSource).where(IncomeSource.user_id == user.id))
+        for i in db.scalars(select(IncomeSource).where(IncomeSource.user_id == user.id, IncomeSource.rejected.is_(False)))
     ]
     horizon_start = as_of - timedelta(days=400)
     rows = db.execute(
         select(Transaction.booked_on, Transaction.amount_minor, Transaction.category_id).where(
-            Transaction.user_id == user.id, Transaction.internal.is_(False), Transaction.currency == "KZT",
+            Transaction.user_id == user.id, is_cashflow(), Transaction.currency == "KZT",
             Transaction.booked_on >= horizon_start, Transaction.booked_on <= as_of)
     ).all()
     txs = [Tx(r[0], r[1] / 100, r[2]) for r in rows]

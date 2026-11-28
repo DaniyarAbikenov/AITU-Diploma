@@ -8,21 +8,27 @@ from starlette.datastructures import UploadFile
 from app.core.config import as_of
 from app.core.db import get_db
 from app.core.errors import ApiError
-from app.core.money import to_major
+from app.core.money import to_major, to_minor
 from app.core.security import current_user
-from app.models import Account, Category, ImportBatch, MerchantRule, Transaction, User
+from app.models import Account, AccountCheckpoint, Category, ImportBatch, MerchantRule, Transaction, User
 from app.parsers import synthetic
 from app.parsers.registry import pick_parser
 from app.schemas import (
+    AccountIn,
     AccountOut,
+    AccountPatch,
     BulkCategorizeIn,
     CategoryOut,
+    CheckpointIn,
+    CheckpointOut,
     ImportReportOut,
     MerchantRuleOut,
     Ok,
     RecategorizeIn,
     TransactionOut,
+    TxKindIn,
 )
+from app.services import accounts as acc_svc
 from app.services import imports
 
 router = APIRouter(tags=["data"])
@@ -33,7 +39,8 @@ SYNTHETIC_DAYS = 130
 def tx_out(t: Transaction) -> TransactionOut:
     return TransactionOut(id=str(t.id), date=t.booked_on.isoformat(), amount=to_major(t.amount_minor), currency=t.currency,
                           merchant=t.merchant, categoryId=t.category_id, accountId=str(t.account_id),
-                          needsReview=t.needs_review, internal=t.internal)
+                          needsReview=t.needs_review, internal=t.internal, kind=acc_svc.effective_kind(t),
+                          kindSource="user" if t.user_kind else "auto")
 
 
 def _category_or_422(db: Session, category_id: str) -> None:
@@ -44,7 +51,67 @@ def _category_or_422(db: Session, category_id: str) -> None:
 @router.get("/accounts", response_model=list[AccountOut])
 def accounts(u: User = Depends(current_user), db: Session = Depends(get_db)):
     rows = db.scalars(select(Account).where(Account.user_id == u.id).order_by(Account.id)).all()
-    return [AccountOut(id=str(a.id), bank=a.bank, name=a.name, currency=a.currency, balance=to_major(a.balance_minor)) for a in rows]
+    return [acc_svc.account_out(db, a) for a in rows]
+
+
+def _own_account(db: Session, u: User, account_id: int) -> Account:
+    a = db.get(Account, account_id)
+    if not a or a.user_id != u.id:
+        raise ApiError(404, "Счёт не найден")
+    return a
+
+
+@router.post("/accounts", response_model=AccountOut, status_code=201)
+def create_account(body: AccountIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    """An account the user adds by hand (for example cash). It is confirmed by definition."""
+    a = Account(user_id=u.id, bank=body.bank.strip(), name=body.name.strip(), currency=body.currency, kind=body.kind,
+                confirmed=True, balance_minor=0)
+    db.add(a)
+    db.flush()
+    if body.balance is not None:
+        on = date.fromisoformat(body.balanceAsOf) if body.balanceAsOf else as_of()
+        acc_svc.add_checkpoint(db, a, to_minor(body.balance), on, "manual")
+    db.commit()
+    return acc_svc.account_out(db, a)
+
+
+@router.patch("/accounts/{account_id}", response_model=AccountOut)
+def update_account(account_id: int, body: AccountPatch, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    a = _own_account(db, u, account_id)
+    for field, attr in (("bank", "bank"), ("name", "name"), ("kind", "kind"), ("currency", "currency"),
+                        ("confirmed", "confirmed")):
+        value = getattr(body, field)
+        if value is not None:
+            setattr(a, attr, value.strip() if isinstance(value, str) and field in ("bank", "name") else value)
+    db.commit()
+    return acc_svc.account_out(db, a)
+
+
+def _cp_out(c: AccountCheckpoint) -> CheckpointOut:
+    return CheckpointOut(id=str(c.id), accountId=str(c.account_id), balance=to_major(c.balance_minor),
+                         asOf=c.as_of.isoformat(), source=c.source)
+
+
+@router.get("/accounts/{account_id}/checkpoints", response_model=list[CheckpointOut])
+def checkpoints(account_id: int, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    a = _own_account(db, u, account_id)
+    rows = db.scalars(select(AccountCheckpoint).where(AccountCheckpoint.account_id == a.id)
+                      .order_by(AccountCheckpoint.as_of.desc(), AccountCheckpoint.id.desc()))
+    return [_cp_out(c) for c in rows]
+
+
+@router.post("/accounts/{account_id}/checkpoints", response_model=AccountOut, status_code=201)
+def add_checkpoint(account_id: int, body: CheckpointIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Record a known balance on a date (FR-12). The balance is what the user or the statement header says,
+    never a sum of operations. Saving it also confirms the account."""
+    a = _own_account(db, u, account_id)
+    on = date.fromisoformat(body.asOf)
+    if on > as_of():
+        raise ApiError(422, "Дата остатка не может быть в будущем")
+    acc_svc.add_checkpoint(db, a, to_minor(body.balance), on, body.source)
+    a.confirmed = True
+    db.commit()
+    return acc_svc.account_out(db, a)
 
 
 @router.get("/categories", response_model=list[CategoryOut])
@@ -54,9 +121,11 @@ def categories(_: User = Depends(current_user), db: Session = Depends(get_db)):
 
 @router.get("/transactions", response_model=list[TransactionOut])
 def transactions(date_from: date | None = None, date_to: date | None = None, category: str | None = None,
-                 account: int | None = None, q: str | None = None, limit: int = 5000, offset: int = 0,
-                 u: User = Depends(current_user), db: Session = Depends(get_db)):
+                 account: int | None = None, bank: str | None = None, q: str | None = None, limit: int = 5000,
+                 offset: int = 0, u: User = Depends(current_user), db: Session = Depends(get_db)):
     stmt = select(Transaction).where(Transaction.user_id == u.id)
+    if bank:
+        stmt = stmt.join(Account, Account.id == Transaction.account_id).where(Account.bank == bank)
     if date_from:
         stmt = stmt.where(Transaction.booked_on >= date_from)
     if date_to:
@@ -78,6 +147,28 @@ def recategorize(tx_id: int, body: RecategorizeIn, u: User = Depends(current_use
         raise ApiError(404, "Операция не найдена")
     _category_or_422(db, body.category)
     t.category_id, t.category_source, t.needs_review = body.category, "user", False
+    db.commit()
+    return tx_out(t)
+
+
+@router.patch("/transactions/{tx_id}/kind", response_model=TransactionOut)
+def set_kind(tx_id: int, body: TxKindIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    """The user's decision about the operation type (expense, income, own transfer, transfer to someone else).
+    It is stored next to the imported original, which is not changed, and wins over automatic rules (FR-10, FR-17).
+    saveRule applies it to every operation of the merchant and to future imports."""
+    t = db.get(Transaction, tx_id)
+    if not t or t.user_id != u.id:
+        raise ApiError(404, "Операция не найдена")
+    t.user_kind = body.kind
+    t.needs_review = False
+    if body.saveRule:
+        for other in db.scalars(select(Transaction).where(Transaction.user_id == u.id, Transaction.merchant == t.merchant)):
+            other.user_kind = body.kind
+        rule = db.scalar(select(MerchantRule).where(MerchantRule.user_id == u.id, MerchantRule.merchant == t.merchant))
+        if rule:
+            rule.kind = body.kind
+        elif body.kind:
+            db.add(MerchantRule(user_id=u.id, merchant=t.merchant, category_id=t.category_id, kind=body.kind))
     db.commit()
     return tx_out(t)
 
