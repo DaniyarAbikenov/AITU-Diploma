@@ -1848,3 +1848,22 @@
     display: none;
   }
 }
+.nav-safe .nav-formula > div {
+  border-bottom-color: rgb(255 255 255 / 0.18);
+  padding: 8px 0;
+  font-size: 13px;
+  color: inherit;
+}
+.nav-safe .nav-small,
+.nav-safe .nav-note {
+  color: inherit;
+  opacity: 0.9;
+}
+.nav-safe .nav-note {
+  background: rgb(255 255 255 / 0.08);
+  border-color: rgb(255 255 255 / 0.3);
+}
+.nav-safe .nav-text-button {
+  color: inherit;
+  text-decoration: underline;
+}
