@@ -147,3 +147,21 @@ export interface InsightSettings {
   thresholds: { key: string; label: string; unit: "money" | "share" | "days" | "months"; value: number; default: number; isDefault: boolean }[];
   sensitive: { id: string; title: string; enabled: boolean }[];
 }
+
+export interface SplitItem { type: "tax" | "reserve" | "goal"; id: string | null; name: string; amount: number }
+export interface DailyNeed { id: string; name: string; amount: number; period: "day" | "month"; coveredBy: string | null; skipped: boolean;
+  /** The same need for the other period, by the days of the current month. */
+  perDay: number; perMonth: number }
+export type DailyNeedIn = Pick<DailyNeed, "name" | "amount" | "period"> & { coveredBy?: string | null };
+/** One server calculation for the overview; null = not computed because an input is unknown. */
+export interface MoneyPlan {
+  asOf: string; liquid: number | null; liquidForeign: number; protected: number;
+  plan: { days: number; until: string; horizon: "income" | "month-end"; committed: number; needs: number; safeDaily: number; deficit: number } | null;
+  needs: DailyNeed[]; needToday: number | null; suggestedDaily: number | null;
+  setAside: { amount: number | null; free: number | null; missing: ("accounts" | "needs" | "income")[]; items: SplitItem[]; days: number; hasTargets: boolean };
+}
+export interface AllocationRule { name: string; kind: "tax" | "reserve" | "goals"; mode: "percent" | "fixed"; value: number }
+export interface IncomeAllocations {
+  proposals: { transactionId: string; date: string; name: string; amount: number; items: SplitItem[]; left: number }[];
+  confirmed: { transactionId: string; items: SplitItem[] }[];
+}

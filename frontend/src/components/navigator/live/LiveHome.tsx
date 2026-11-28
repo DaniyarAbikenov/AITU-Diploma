@@ -1,16 +1,16 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Info, ShieldCheck, Wallet } from "lucide-react";
+import { Activity, ShieldCheck, Wallet } from "lucide-react";
 import { q } from "@/api/client";
 import { EstimateNote } from "@/components/kit";
 import { bankName, ru } from "@/i18n/ru";
-import { formatPercent } from "@/lib/format";
+import { formatDate, formatPercent } from "@/lib/format";
 import { accountNow, formatDay } from "@/lib/navigator-live";
 import { addDays } from "@/lib/safe-to-spend";
 import { money, moneyIn } from "../model";
 import { Panel } from "../shared";
 import { KztHint, Missing, Preliminary } from "./common";
 import { InsightsPanel, MonthEndPanel } from "./LiveInsights";
+import { IncomeSplitPanel, SetAsidePanel, SpendingLimit } from "./MoneyPlan";
 import { TxList } from "./LiveTransactions";
 import type { LiveProps } from "./types";
 
@@ -18,63 +18,16 @@ const t = ru.live.home;
 
 export function LiveHome(props: LiveProps) {
   const { snap, go, today, obligations } = props;
-  const [how, setHow] = useState(false);
   const recent = useQuery(q.transactionsFor({ from: addDays(today, -60), to: today }));
   const hasOps = (recent.data?.length ?? 0) > 0;
   const resilience = useQuery({ ...q.resilience, enabled: hasOps && snap.usable.length > 0 });
   const credits = obligations.filter(
     (o) => !o.rejected && (o.kind === "credit" || o.kind === "installment"),
   );
-  const sts = snap.sts;
   return (
     <>
       <div className="nav-top-grid">
-        <section className="nav-safe" aria-label={t.safeTitle}>
-          <div className="nav-between">
-            <span>
-              {t.safeTitle} <Preliminary />
-            </span>
-            <button aria-label={t.howTitle} onClick={() => setHow(!how)}>
-              <Info size={19} />
-            </button>
-          </div>
-          {sts ? (
-            <>
-              <p className="nav-safe-amount">{money(sts.safeDaily)}</p>
-              <p>{t.safeUntil(formatDay(sts.until))}</p>
-              <p className="nav-small">{t.ceilingNote}</p>
-              {sts.deficit > 0 && <p className="nav-warning">{t.deficit(money(sts.deficit))}</p>}
-              <div className="nav-safe-line" />
-              <div className="nav-formula">
-                <div>
-                  <span>Текущие счета и наличные</span>
-                  <strong>{money(snap.liquid ?? 0)}</strong>
-                </div>
-                <div>
-                  <span>Подтверждённые платежи в горизонте</span>
-                  <strong>−{money(sts.committed)}</strong>
-                </div>
-                <div>
-                  <span>Дней в горизонте</span>
-                  <strong>{ru.common.days(sts.days)}</strong>
-                </div>
-              </div>
-              <p className="nav-small">
-                {sts.horizon === "income" ? t.safeIncome : t.safeMonthEnd}
-              </p>
-              {snap.confirmedPayments.length === 0 && (
-                <Missing action="Открыть календарь" onAction={() => go("calendar")}>
-                  {t.noPayments}
-                </Missing>
-              )}
-            </>
-          ) : (
-            <Missing action={t.noAccountsAction} onAction={() => go("profile")}>
-              {t.noAccounts}
-            </Missing>
-          )}
-          {how && <p className="nav-small">{t.formula}</p>}
-        </section>
+        <SpendingLimit {...props} />
         <Panel title={t.capitalTitle}>
           {snap.usable.length ? (
             <>
@@ -106,7 +59,10 @@ export function LiveHome(props: LiveProps) {
                   <div className="nav-account">
                     <span>{ru.dep.frozen}</span>
                     <strong>
-                      {ru.dep.frozenUntil(money(snap.frozen), formatDay(snap.unlocks[0].date))}
+                      {ru.dep.frozenUntil(
+                        money(snap.frozen),
+                        formatDate(snap.unlocks[0].date, true),
+                      )}
                     </strong>
                   </div>
                   <p className="nav-small">{ru.dep.capitalHint}</p>
@@ -126,6 +82,8 @@ export function LiveHome(props: LiveProps) {
           {credits.length > 0 && <p className="nav-small">{t.debtUnknown}</p>}
         </Panel>
       </div>
+      <IncomeSplitPanel notify={props.notify} />
+      <SetAsidePanel go={go} />
       <div className="nav-kpis">
         <button onClick={() => go("profile")}>
           <span className="nav-kpi-icon">

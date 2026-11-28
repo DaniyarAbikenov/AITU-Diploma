@@ -95,6 +95,15 @@ export const api = {
   deleteAmountRule: (type: "obligation" | "planned", id: string) => call(`/rules/${type}/${id}`, () => m.deleteAmountRule(type, id), { method: "DELETE" }),
   setOverride: (type: "obligation" | "planned", id: string, month: string, amount: number | null) =>
     call(`/overrides/${type}/${id}/${month}`, () => ({ ok: true }), body("PUT", { amount })),
+  moneyPlan: () => call<T.MoneyPlan>("/money-plan", m.moneyPlan),
+  addNeed: (n: T.DailyNeedIn) => call("/daily-needs", () => m.addNeed(n), body("POST", n)),
+  updateNeed: (id: string, n: T.DailyNeedIn) => call("/daily-needs/" + id, () => Object.assign(m.db.needs.find((x) => x.id === id)!, n), body("PUT", n)),
+  deleteNeed: (id: string) => call("/daily-needs/" + id, () => { m.db.needs = m.db.needs.filter((x) => x.id !== id); return { ok: true }; }, { method: "DELETE" }),
+  allocationRules: () => call<T.AllocationRule[]>("/allocation-rules", () => m.db.allocationRules),
+  saveAllocationRules: (r: T.AllocationRule[]) => call<T.AllocationRule[]>("/allocation-rules", () => (m.db.allocationRules = r), body("PUT", r)),
+  incomeAllocations: () => call<T.IncomeAllocations>("/income-allocations", () => m.db.incomeAllocations),
+  decideIncomeAllocation: (id: string, action: "confirm" | "skip" | "done") =>
+    call("/income-allocations/" + id, () => { m.db.incomeAllocations.proposals = m.db.incomeAllocations.proposals.filter((p) => p.transactionId !== id); return { ok: true }; }, body("POST", { action })),
   insightSettings: () => call<T.InsightSettings>("/insights/settings", () => m.insightSettings),
   updateInsightSettings: (patch: { thresholds?: Record<string, number | null>; sensitive?: Record<string, boolean> }) =>
     call<T.InsightSettings>("/insights/settings", () => m.patchInsightSettings(patch), body("PATCH", patch)),
@@ -161,6 +170,9 @@ export const q = {
   transferCandidates: queryOptions({ queryKey: ["transactions", "candidates"], queryFn: api.transferCandidates }),
   ruleVariables: queryOptions({ queryKey: ["ruleVariables"], queryFn: api.ruleVariables, staleTime: Infinity }),
   dtiPayments: (month: string) => queryOptions({ queryKey: ["dti", "payments", month], queryFn: () => api.dtiPayments(month) }),
+  moneyPlan: queryOptions({ queryKey: ["moneyPlan"], queryFn: api.moneyPlan }),
+  allocationRules: queryOptions({ queryKey: ["moneyPlan", "rules"], queryFn: api.allocationRules }),
+  incomeAllocations: queryOptions({ queryKey: ["moneyPlan", "income"], queryFn: api.incomeAllocations }),
   insightSettings: queryOptions({ queryKey: ["insightSettings"], queryFn: api.insightSettings }),
   smartInsights: (surface: "dashboard" | "calendar" | "all" = "dashboard") =>
     queryOptions({ queryKey: ["smart", surface], queryFn: () => api.smartInsights(surface) }),

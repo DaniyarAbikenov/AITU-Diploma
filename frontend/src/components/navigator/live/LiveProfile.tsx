@@ -11,11 +11,13 @@ import type {
 } from "@/api/types";
 import { updateSession } from "@/lib/auth";
 import { bankName, ru } from "@/i18n/ru";
+import { formatDate } from "@/lib/format";
 import { cautiousIncome, formatDay } from "@/lib/navigator-live";
 import { money, moneyIn } from "../model";
 import { Panel } from "../shared";
 import { KztHint, Missing } from "./common";
 import { ObligationsPanel } from "./LivePayments";
+import { NeedsPanel, PayoutRulesPanel } from "./MoneyPlan";
 import { PrivacyPanel } from "./PrivacyPanel";
 import { InsightSettingsPanel } from "./InsightSettingsPanel";
 import { FormError } from "./forms";
@@ -175,6 +177,8 @@ export function LiveProfile({ me, accounts, incomes, obligations, today, notify 
         </details>
       </Panel>
       <ObligationsPanel obligations={obligations} notify={notify} />
+      <NeedsPanel obligations={obligations} notify={notify} />
+      <PayoutRulesPanel notify={notify} />
       <InsightSettingsPanel notify={notify} />
       <PrivacyPanel email={me.email} />
     </>
@@ -234,8 +238,11 @@ function AccountRow({
         <KztHint a={a} />
         {(a.frozenAmount ?? 0) > 0 && a.frozenUntil && (
           <p className="nav-small">
-            {ru.dep.rowFrozen(moneyIn(a.frozenAmount!, a.currency), formatDay(a.frozenUntil))} ·{" "}
-            {ru.dep.rowAvailable(moneyIn(a.availableBalance ?? 0, a.currency))}
+            {ru.dep.rowFrozen(
+              moneyIn(a.frozenAmount!, a.currency),
+              formatDate(a.frozenUntil, true),
+            )}{" "}
+            · {ru.dep.rowAvailable(moneyIn(a.availableBalance ?? 0, a.currency))}
             {a.interestRate != null ? ` · ${a.interestRate}% годовых` : ""}
             {a.earlyWithdrawal
               ? ` · досрочно: ${ru.dep.earlyOptions[a.earlyWithdrawal].toLowerCase()}`

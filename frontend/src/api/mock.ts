@@ -2,8 +2,9 @@
 import type {
   Account, BalancePoint, Category, CityPrice, DashboardSummary, DtiPoint, Goal, GoalProjection, ImportReport, IncomeSource,
   Insight, MacroIndicator, MerchantRule, MonthEndForecast, BalanceForecast, Obligation, ObligationsCalendar, PersonalInflation,
-  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction, User, AccountIn, TxKind, TxQuery, Decision, ImportPreview, SmartCard, InsightSettings, RuleIn, RuleInfo, RulePreview, Rates, TransactionIn, TransferIn, TransactionPatch, PlannedPayment, PlannedIn, PlannedPatch, SettleIn,
+  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction, User, AccountIn, TxKind, TxQuery, Decision, ImportPreview, SmartCard, InsightSettings, DailyNeed, DailyNeedIn, MoneyPlan, AllocationRule, IncomeAllocations, RuleIn, RuleInfo, RulePreview, Rates, TransactionIn, TransferIn, TransactionPatch, PlannedPayment, PlannedIn, PlannedPatch, SettleIn,
 } from "./types";
+import { liveSnapshot } from "@/lib/navigator-live";
 
 export const AS_OF = "2026-10-19";
 export const MODEL_VERSION = "fc-2.3.1";
@@ -90,6 +91,10 @@ export const db = {
   planned: [] as PlannedPayment[],
   dti: null as DtiPoint[] | null,
   smart: [] as SmartCard[],
+  needs: [] as DailyNeed[],
+  allocationRules: [] as AllocationRule[],
+  incomeAllocations: { proposals: [], confirmed: [] } as IncomeAllocations,
+  setAside: null as MoneyPlan["setAside"] | null,
   me: { id: "u1", email: "mock@example.com", name: "Айгерим", city: "Алматы", currency: "KZT", timezone: "Asia/Almaty", plannedIncome: null, essentialExpenses: null, workHours: null } as User,
 };
 
@@ -408,4 +413,21 @@ export function patchInsightSettings(p: { thresholds?: Record<string, number | n
     if (x) x.enabled = v;
   }
   return insightSettings;
+}
+
+export function addNeed(n: DailyNeedIn) {
+  db.needs.push({ ...n, id: "n" + Date.now(), coveredBy: n.coveredBy ?? null, skipped: false, perDay: 0, perMonth: 0 });
+  return { ok: true };
+}
+/** Mock of GET /money-plan: the server computes it in real mode. */
+export function moneyPlan(): MoneyPlan {
+  const s = liveSnapshot({ today: AS_OF, me: db.me, accounts, obligations: db.obligations, incomes: db.income, planned: db.planned });
+  const perDay = db.needs.reduce((a, n) => a + (n.period === "day" ? n.amount : n.amount / 31), 0);
+  return {
+    asOf: AS_OF, liquid: s.liquid, liquidForeign: 0, protected: 0,
+    plan: s.sts && { days: s.sts.days, until: s.sts.until, horizon: s.sts.horizon, committed: s.sts.committed, needs: perDay * s.sts.days,
+      safeDaily: Math.max(0, Math.floor(s.sts.safeDaily - perDay)), deficit: s.sts.deficit },
+    needs: db.needs.map((n) => ({ ...n, perDay: n.period === "day" ? n.amount : Math.round(n.amount / 31), perMonth: n.period === "day" ? n.amount * 31 : n.amount })), needToday: db.needs.length ? perDay : null, suggestedDaily: 8_000,
+    setAside: db.setAside ?? { amount: null, free: null, missing: ["needs", "income"], items: [], days: 35, hasTargets: true },
+  };
 }
