@@ -17,20 +17,20 @@ import type {
   NavTransaction,
   navMetrics,
 } from "@/lib/navigator";
+import { formatMoney, formatMoneyShort } from "@/lib/format";
+import { ru } from "@/i18n/ru";
 
-export const money = (n: number) =>
-  new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(n) + " ₸";
-export const compact = (n: number) =>
-  new Intl.NumberFormat("ru-RU", { notation: "compact", maximumFractionDigits: 1 }).format(n) +
-  " ₸";
+/** One tenge format for the whole app (src/lib/format.ts): "1 080 000 ₸" and "1,08 млн ₸". */
+export const money = (n: number) => formatMoney(n);
+export const compact = (n: number) => formatMoneyShort(n);
 export const tabs = [
-  { id: "home", name: "Обзор", icon: LayoutDashboard },
-  { id: "goals", name: "Мои цели", icon: Target },
-  { id: "transactions", name: "Операции", icon: Wallet },
-  { id: "calendar", name: "Календарь", icon: CalendarDays },
-  { id: "forecast", name: "Прогноз", icon: TrendingUp },
-  { id: "quests", name: "Мой прогресс", icon: Leaf },
-  { id: "profile", name: "Профиль", icon: Settings2 },
+  { id: "home", name: ru.tabs.home, icon: LayoutDashboard },
+  { id: "goals", name: ru.tabs.goals, icon: Target },
+  { id: "transactions", name: ru.tabs.transactions, icon: Wallet },
+  { id: "calendar", name: ru.tabs.calendar, icon: CalendarDays },
+  { id: "forecast", name: ru.tabs.forecast, icon: TrendingUp },
+  { id: "quests", name: ru.tabs.quests, icon: Leaf },
+  { id: "profile", name: ru.tabs.profile, icon: Settings2 },
 ] as const;
 export type Tab = (typeof tabs)[number]["id"];
 export type Modal =
