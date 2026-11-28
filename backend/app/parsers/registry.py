@@ -3,9 +3,10 @@ fallback, so choosing the wrong bank in the UI does not break an upload."""
 import io
 
 from app.parsers.freedom import FreedomParser
+from app.parsers.halyk import HalykParser
 from app.parsers.kaspi import KaspiParser
 
-PARSERS = {"kaspi": KaspiParser, "freedom": FreedomParser}
+PARSERS = {"kaspi": KaspiParser, "freedom": FreedomParser, "halyk": HalykParser}
 
 
 def first_page_text(data: bytes) -> str:
@@ -23,9 +24,11 @@ def pick_parser(data: bytes, bank_hint: str = ""):
     text = first_page_text(data)
     if FreedomParser.detects(text):
         return FreedomParser
+    if HalykParser.detects(text):
+        return HalykParser
     if "Kaspi" in text:
         return KaspiParser
     key = bank_hint.lower().split()[0] if bank_hint else ""
     if key in PARSERS:
         return PARSERS[key]
-    raise LookupError("Не удалось определить банк: сейчас поддерживаются выписки Kaspi Gold и Freedom Bank в PDF")
+    raise LookupError("Не удалось определить банк: сейчас поддерживаются выписки Kaspi Gold, Halyk и Freedom Bank в PDF")

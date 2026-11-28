@@ -2,38 +2,74 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { PublicFrame } from "@/components/navigator/PublicFrame";
+import { ru } from "@/i18n/ru";
 import { register as registerUser } from "@/lib/auth";
-import { AuthFrame } from "@/components/AuthFrame";
 
 export const Route = createFileRoute("/register")({
-  head: () => ({ meta: [
-    { title: "Регистрация — Запас" }, { name: "description", content: "Создайте аккаунт и загрузите первую выписку банка." },
-    { property: "og:title", content: "Регистрация — Запас" }, { property: "og:description", content: "Начните с PDF-выписки — остальное приложение сделает само." },
-  ] }),
+  head: () => ({
+    meta: [
+      { title: "Регистрация — Financial Life Navigator" },
+      { name: "description", content: "Создайте аккаунт и загрузите первую выписку банка." },
+    ],
+  }),
   component: Register,
 });
 
-const schema = z.object({ name: z.string().min(2, "Как к вам обращаться?"), email: z.string().email("Введите корректный email"), password: z.string().min(8, "Минимум 8 символов") });
+const t = ru.pub;
+const schema = z.object({
+  name: z.string().min(2, t.nameShort),
+  email: z.string().email(t.emailInvalid),
+  password: z.string().min(8, t.passwordShort(8)),
+});
+const FIELDS = [
+  ["name", t.name, "text", "name"],
+  ["email", t.email, "email", "email"],
+  ["password", t.password, "password", "new-password"],
+] as const;
 
 function Register() {
   const navigate = useNavigate();
-  const { register, handleSubmit, setError, formState: { errors } } = useForm({ resolver: zodResolver(schema) });
+  const {
+    register,
+    handleSubmit,
+    setError,
+    formState: { errors, isSubmitting },
+  } = useForm({ resolver: zodResolver(schema) });
   return (
-    <AuthFrame title="Создать аккаунт">
-      <form className="space-y-4" onSubmit={handleSubmit(async (v) => { try { await registerUser(v.email, v.name, v.password); navigate({ to: "/onboarding" }); } catch (e) { setError("email", { message: (e as Error).message }); } })}>
-        {(["name", "email", "password"] as const).map((f) => (
-          <div key={f} className="space-y-1.5">
-            <Label htmlFor={f}>{{ name: "Имя", email: "Email", password: "Пароль" }[f]}</Label>
-            <Input id={f} type={f === "password" ? "password" : f === "email" ? "email" : "text"} {...register(f)} aria-invalid={!!errors[f]} />
-            {errors[f] && <p className="text-xs text-risk">{errors[f]?.message}</p>}
-          </div>
-        ))}
-        <Button type="submit" className="w-full">Продолжить</Button>
-        <p className="text-center text-sm text-muted-foreground">Уже есть аккаунт? <Link to="/login" className="text-primary hover:underline">Войти</Link></p>
-      </form>
-    </AuthFrame>
+    <PublicFrame>
+      <div className="nav-panel nav-public-card">
+        <h1>{t.registerTitle}</h1>
+        <form
+          className="nav-form"
+          onSubmit={handleSubmit(async (v) => {
+            try {
+              await registerUser(v.email, v.name, v.password);
+              navigate({ to: "/onboarding" });
+            } catch (e) {
+              setError("email", { message: (e as Error).message });
+            }
+          })}
+        >
+          {FIELDS.map(([f, label, type, auto]) => (
+            <label key={f} className="nav-field">
+              {label}
+              <input type={type} autoComplete={auto} aria-invalid={!!errors[f]} {...register(f)} />
+              {errors[f] && (
+                <span className="nav-field-error" role="alert">
+                  {errors[f]?.message as string}
+                </span>
+              )}
+            </label>
+          ))}
+          <button type="submit" className="nav-primary" disabled={isSubmitting}>
+            {t.continue}
+          </button>
+          <p className="nav-small">
+            {t.haveAccount} <Link to="/login">{t.login}</Link>
+          </p>
+        </form>
+      </div>
+    </PublicFrame>
   );
 }

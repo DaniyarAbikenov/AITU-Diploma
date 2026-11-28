@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -9,29 +9,57 @@ from app.core.db import get_db
 from app.core.errors import ApiError
 from app.core.money import to_major, to_minor
 from app.core.security import current_user
-from app.models import Goal, IncomeSource, Obligation, Transaction, User
+from app.models import Category, Goal, IncomeSource, Obligation, Transaction, User
 from app.schemas import (
     CalendarMonth,
-    ConfirmIn,
+    DtiPaymentOut,
     DtiPointOut,
     GoalIn,
     GoalOut,
     GoalProjectionOut,
+    IncomeSourceIn,
     IncomeSourceOut,
+    IncomeSourcePatch,
     ObligationIn,
     ObligationOut,
+    ObligationPatch,
     ObligationsCalendarOut,
     Ok,
 )
 from app.services import goals as goal_svc
+from app.services.accounts import eff_amount, eff_date, is_cashflow
 from app.services.ledger import add_months, month_key
 
 router = APIRouter(tags=["planning"])
 
 
-def ob_out(o: Obligation) -> ObligationOut:
-    return ObligationOut(id=str(o.id), name=o.name, kind=o.kind, amount=to_major(o.amount_minor), dayOfMonth=o.day_of_month,
-                         endsAt=o.ends_at, confirmed=o.confirmed)
+def ob_out(o: Obligation, db: Session | None = None, u: User | None = None) -> ObligationOut:
+    from app.routers.rules import rule_info
+
+    out = ObligationOut(id=str(o.id), name=o.name, kind=o.kind, amount=to_major(o.amount_minor), dayOfMonth=o.day_of_month,
+                         endsAt=o.ends_at, confirmed=o.confirmed, rejected=o.rejected, categoryId=o.category_id,
+                         debtLeft=None if o.debt_left_minor is None else to_major(o.debt_left_minor))
+    if db is not None and u is not None:
+        out.rule = rule_info(db, u, "obligation", o.id)
+    return out
+
+
+def _apply_decision(row, body) -> None:
+    """Confirm and reject are exclusive: confirming clears a rejection and the other way round."""
+    if body.rejected:
+        row.rejected, row.confirmed = True, False
+    elif body.confirmed:
+        row.confirmed, row.rejected = True, False
+    else:
+        if body.confirmed is False:
+            row.confirmed = False
+        if body.rejected is False:
+            row.rejected = False
+
+
+def _category_ok(db: Session, category: str | None) -> None:
+    if category is not None and db.get(Category, category) is None:
+        raise ApiError(422, f"Неизвестная категория: {category}")
 
 
 def _own(db: Session, model, item_id: int, user: User, what: str):
@@ -44,24 +72,43 @@ def _own(db: Session, model, item_id: int, user: User, what: str):
 # ---- obligations
 @router.get("/obligations", response_model=list[ObligationOut])
 def obligations(u: User = Depends(current_user), db: Session = Depends(get_db)):
-    return [ob_out(o) for o in db.scalars(select(Obligation).where(Obligation.user_id == u.id).order_by(Obligation.id))]
+    return [ob_out(o, db, u) for o in db.scalars(select(Obligation).where(Obligation.user_id == u.id).order_by(Obligation.id))]
 
 
 @router.post("/obligations", response_model=ObligationOut, status_code=201)
 def add_obligation(body: ObligationIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
-    o = Obligation(user_id=u.id, name=body.name, kind=body.kind, amount_minor=to_minor(body.amount),
-                   day_of_month=body.dayOfMonth, ends_at=body.endsAt, confirmed=True)
+    _category_ok(db, body.category)
+    o = Obligation(user_id=u.id, name=body.name.strip(), kind=body.kind, amount_minor=to_minor(body.amount),
+                   day_of_month=body.dayOfMonth, ends_at=body.endsAt, confirmed=True, category_id=body.category,
+                   debt_left_minor=None if body.debtLeft is None else to_minor(body.debtLeft))
     db.add(o)
     db.commit()
-    return ob_out(o)
+    return ob_out(o, db, u)
 
 
 @router.patch("/obligations/{ob_id}", response_model=ObligationOut)
-def confirm_obligation(ob_id: int, body: ConfirmIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
+def update_obligation(ob_id: int, body: ObligationPatch, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Edit a regular payment (day 29–31 means the last day in shorter months) and/or confirm or reject it."""
     o = _own(db, Obligation, ob_id, u, "Обязательство")
-    o.confirmed = body.confirmed
+    sent = body.model_fields_set
+    if body.name:
+        o.name = body.name.strip()
+    if body.kind:
+        o.kind = body.kind
+    if body.amount is not None:
+        o.amount_minor = to_minor(body.amount)
+    if body.dayOfMonth is not None:
+        o.day_of_month = body.dayOfMonth
+    if "endsAt" in sent:
+        o.ends_at = body.endsAt
+    if "category" in sent:
+        _category_ok(db, body.category)
+        o.category_id = body.category
+    if "debtLeft" in sent:
+        o.debt_left_minor = None if body.debtLeft is None else to_minor(body.debtLeft)
+    _apply_decision(o, body)
     db.commit()
-    return ob_out(o)
+    return ob_out(o, db, u)
 
 
 @router.delete("/obligations/{ob_id}", response_model=Ok)
@@ -71,14 +118,17 @@ def delete_obligation(ob_id: int, u: User = Depends(current_user), db: Session =
     return Ok()
 
 
-def _monthly_income(db: Session, u: User) -> float:
-    return sum(i.amount_minor for i in db.scalars(select(IncomeSource).where(IncomeSource.user_id == u.id))) / 100
+def _monthly_income(db: Session, u: User, confirmed_only: bool = False) -> float:
+    stmt = select(IncomeSource).where(IncomeSource.user_id == u.id, IncomeSource.rejected.is_(False))
+    if confirmed_only:
+        stmt = stmt.where(IncomeSource.confirmed.is_(True))
+    return sum(i.amount_minor for i in db.scalars(stmt)) / 100
 
 
 @router.get("/obligations/calendar", response_model=ObligationsCalendarOut)
 def calendar(months: int = 12, u: User = Depends(current_user), db: Session = Depends(get_db)):
     """Planned payments for the next `months` months, starting with the month after today."""
-    obs = db.scalars(select(Obligation).where(Obligation.user_id == u.id)).all()
+    obs = db.scalars(select(Obligation).where(Obligation.user_id == u.id, Obligation.rejected.is_(False))).all()
     first = add_months(as_of().replace(day=1), 1)
     out = []
     for i in range(max(1, min(months, 36))):
@@ -93,40 +143,120 @@ def calendar(months: int = 12, u: User = Depends(current_user), db: Session = De
     return ObligationsCalendarOut(months=out, income=_monthly_income(db, u))
 
 
+DTI_CHECK = 1.0  # above 100 % of income the month is shown with "check the data"
+INCOMPLETE_SHARE = 0.5  # income in statements below half of the confirmed expected income = incomplete month
+
+
+def _dti_rows(db: Session, u: User, first: date, last: date):
+    """Cash-flow operations in tenge (own transfers, deposits and cancelled operations are excluded by is_cashflow)."""
+    return db.execute(select(Transaction.id, eff_date, eff_amount, Transaction.category_id, Transaction.merchant).where(
+        Transaction.user_id == u.id, is_cashflow(), Transaction.currency == "KZT", eff_date >= first,
+        eff_date <= last)).all()
+
+
 @router.get("/obligations/dti-history", response_model=list[DtiPointOut])
 def dti_history(months: int = 12, u: User = Depends(current_user), db: Session = Depends(get_db)):
-    """Debt-to-income per completed month: loan/installment payments seen in the statements over income seen."""
+    """Debt-to-income per completed month: loan and installment payments (operations, not balances) over the income
+    received in that month. Months without usable income get dti=null with the reason; above 100 % → "check"."""
     today = as_of()
     cur = today.replace(day=1)
     keys = [month_key(add_months(cur, -k)) for k in range(max(1, min(months, 36)), 0, -1)]
     income = dict.fromkeys(keys, 0)
     debt = dict.fromkeys(keys, 0)
-    rows = db.execute(select(Transaction.booked_on, Transaction.amount_minor, Transaction.category_id).where(
-        Transaction.user_id == u.id, Transaction.internal.is_(False))).all()
-    for on, amount, cat in rows:
+    count = dict.fromkeys(keys, 0)
+    for _, on, amount, cat, _m in _dti_rows(db, u, add_months(cur, -len(keys)), cur):
         k = month_key(on)
         if k in income:
             if cat == "income" and amount > 0:
                 income[k] += amount
             elif cat == "credit" and amount < 0:
                 debt[k] += -amount
-    return [DtiPointOut(month=k, dti=round(debt[k] / income[k], 3)) for k in keys if income[k] > 0]
+                count[k] += 1
+    expected = _monthly_income(db, u, confirmed_only=True) * 100 or None
+    out = []
+    for k in keys:
+        if income[k] == 0 and debt[k] == 0:
+            continue  # no data at all: a gap, not a 0 %
+        point = DtiPointOut(month=k, dti=None, debt=to_major(debt[k]), income=to_major(income[k]),
+                            expectedIncome=None if expected is None else to_major(int(expected)), payments=count[k])
+        if income[k] == 0:
+            point.status = "no_income"
+        elif expected and income[k] < INCOMPLETE_SHARE * expected:
+            point.status = "incomplete_income"
+        else:
+            point.dti = round(debt[k] / income[k], 3)
+            point.status = "check" if point.dti > DTI_CHECK else "ok"
+        out.append(point)
+    return out
+
+
+@router.get("/obligations/dti-payments", response_model=list[DtiPaymentOut])
+def dti_payments(month: str, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Operations counted as debt payments in a month, so the user can spot and re-type a wrong one."""
+    y, m = (int(x) for x in month.split("-"))
+    first = date(y, m, 1)
+    rows = _dti_rows(db, u, first, add_months(first, 1) - timedelta(days=1))
+    return [DtiPaymentOut(id=str(i), date=on.isoformat(), merchant=merchant, amount=to_major(-amount))
+            for i, on, amount, cat, merchant in rows if cat == "credit" and amount < 0]
 
 
 # ---- income
+def inc_out(i: IncomeSource) -> IncomeSourceOut:
+    return IncomeSourceOut(id=str(i.id), name=i.name, amount=to_major(i.amount_minor), dayOfMonth=i.day_of_month,
+                           confirmed=i.confirmed, rejected=i.rejected,
+                           amountMin=None if i.amount_min_minor is None else to_major(i.amount_min_minor),
+                           amountMax=None if i.amount_max_minor is None else to_major(i.amount_max_minor))
+
+
+def _check_range(i: IncomeSource) -> None:
+    lo, hi = i.amount_min_minor, i.amount_max_minor
+    if lo is not None and hi is not None and lo > hi:
+        raise ApiError(422, "Нижняя граница дохода больше верхней")
+
+
 @router.get("/income-sources", response_model=list[IncomeSourceOut])
 def income_sources(u: User = Depends(current_user), db: Session = Depends(get_db)):
-    rows = db.scalars(select(IncomeSource).where(IncomeSource.user_id == u.id).order_by(IncomeSource.id))
-    return [IncomeSourceOut(id=str(i.id), name=i.name, amount=to_major(i.amount_minor), dayOfMonth=i.day_of_month,
-                            confirmed=i.confirmed) for i in rows]
+    rows = db.scalars(select(IncomeSource).where(IncomeSource.user_id == u.id).order_by(IncomeSource.day_of_month, IncomeSource.id))
+    return [inc_out(i) for i in rows]
+
+
+@router.post("/income-sources", response_model=IncomeSourceOut, status_code=201)
+def add_income(body: IncomeSourceIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    """A payout the user enters (for example the second salary payment of the month). Confirmed by definition."""
+    i = IncomeSource(user_id=u.id, name=body.name.strip(), amount_minor=to_minor(body.amount), day_of_month=body.dayOfMonth,
+                     amount_min_minor=None if body.amountMin is None else to_minor(body.amountMin),
+                     amount_max_minor=None if body.amountMax is None else to_minor(body.amountMax), confirmed=True)
+    _check_range(i)
+    db.add(i)
+    db.commit()
+    return inc_out(i)
 
 
 @router.patch("/income-sources/{inc_id}", response_model=IncomeSourceOut)
-def confirm_income(inc_id: int, body: ConfirmIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
+def update_income(inc_id: int, body: IncomeSourcePatch, u: User = Depends(current_user), db: Session = Depends(get_db)):
     i = _own(db, IncomeSource, inc_id, u, "Источник дохода")
-    i.confirmed = body.confirmed
+    sent = body.model_fields_set
+    if body.name:
+        i.name = body.name.strip()
+    if body.amount is not None:
+        i.amount_minor = to_minor(body.amount)
+    if body.dayOfMonth is not None:
+        i.day_of_month = body.dayOfMonth
+    if "amountMin" in sent:
+        i.amount_min_minor = None if body.amountMin is None else to_minor(body.amountMin)
+    if "amountMax" in sent:
+        i.amount_max_minor = None if body.amountMax is None else to_minor(body.amountMax)
+    _check_range(i)
+    _apply_decision(i, body)
     db.commit()
-    return IncomeSourceOut(id=str(i.id), name=i.name, amount=to_major(i.amount_minor), dayOfMonth=i.day_of_month, confirmed=i.confirmed)
+    return inc_out(i)
+
+
+@router.delete("/income-sources/{inc_id}", response_model=Ok)
+def delete_income(inc_id: int, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    db.delete(_own(db, IncomeSource, inc_id, u, "Источник дохода"))
+    db.commit()
+    return Ok()
 
 
 # ---- goals

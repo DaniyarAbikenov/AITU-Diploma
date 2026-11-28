@@ -9,7 +9,7 @@ import re
 from collections import defaultdict
 from datetime import date
 
-from app.parsers.base import ParsedRow, ParsedStatement
+from app.parsers.base import ParsedRow, ParsedStatement, find_mask
 
 DATE_RE = re.compile(r"^\d{2}\.\d{2}\.\d{2}$")
 AMOUNT_RE = re.compile(r"^([+-])\s*([\d\s]+),(\d{2})\s*₸$")
@@ -102,7 +102,7 @@ def parse_pages(pages_words: list[list[dict]], text: str = "") -> ParsedStatemen
         parsed.append(ParsedRow(booked_on=_date(r["date"]), amount_minor=_minor(*m.groups()), merchant=merchant, internal=own))
     account = re.search(r"Выписка по ([^\n]+?) за период", text.replace("ВЫПИСКА\n", "ВЫПИСКА ")) or re.search(r"по (Kaspi [A-Za-z]+)", text)
     st = ParsedStatement(bank="Kaspi Bank", account_name=account.group(1).strip() if account else "Kaspi Gold", rows=parsed,
-                         warnings=warnings)
+                         warnings=warnings, account_mask=find_mask(text.split("Дата")[0]))
     _reconcile(st, text)
     return st
 

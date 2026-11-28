@@ -165,3 +165,18 @@ def test_pdf_import_end_to_end(client, new_user):
     assert next(t for t in txs if "Кредита" in t["merchant"])["categoryId"] == "credit"
     again = client.post(f"{API}/imports", headers=new_user, data={"bank": "Kaspi Bank"}, files=files)
     assert again.json()["parsed"] == 0  # re-importing the same statement adds nothing
+
+
+def test_pdf_preview_writes_nothing_and_suggests_the_account(client, new_user):
+    from tests import kaspi_fixture as fx
+
+    if not fx.font_available():
+        pytest.skip("DejaVu font for the PDF fixture is not installed")
+    files = {"file": ("statement.pdf", fx.build_pdf(), "application/pdf")}
+    p = client.post(f"{API}/imports/preview", headers=new_user, data={"bank": "Kaspi Bank"}, files=files).json()
+    assert p["bank"] == "Kaspi Bank" and p["operations"] == 6 and p["suggestedAccountId"] is None and p["needsChoice"]
+    assert get(client, new_user, "/transactions") == []
+    r = client.post(f"{API}/imports", headers=new_user, data={"bank": "Kaspi Bank", "accountId": "new"}, files=files)
+    assert r.json()["accountName"]
+    p = client.post(f"{API}/imports/preview", headers=new_user, data={"bank": "Kaspi Bank"}, files=files).json()
+    assert p["suggestedAccountId"] == r.json()["accountId"]

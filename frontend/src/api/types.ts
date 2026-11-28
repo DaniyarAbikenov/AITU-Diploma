@@ -3,16 +3,74 @@
 
 export type Status = "ok" | "warn" | "risk";
 
-export interface User { id: string; email: string; name: string; city: string; currency: "KZT" }
-export interface Account { id: string; bank: string; name: string; currency: "KZT" | "USD"; balance: number }
+export interface User {
+  id: string; email: string; name: string; city: string; currency: "KZT";
+  /** IANA zone, Asia/Almaty by default. Plan fields: null = not provided yet (never read as 0). */
+  timezone?: string; plannedIncome?: number | null; essentialExpenses?: number | null; workHours?: number | null;
+}
+export type ProfilePatch = Partial<Pick<User, "name" | "city" | "timezone" | "plannedIncome" | "essentialExpenses" | "workHours">>;
+export type AccountKind = "current" | "savings" | "deposit" | "cash";
+export type AccountCurrency = "KZT" | "USD" | "EUR" | "RUB";
+export interface Rate { currency: string; rate: number; rateDate: string; fetchedAt?: string | null; source: string; stale: boolean }
+export interface Rates { base: "KZT"; source: string; rates: Rate[] }
+export interface Account {
+  /** balance / currentBalance are in the account currency; *Kzt fields are tenge at the latest official rate. */
+  id: string; bank: string; name: string; currency: AccountCurrency; balance: number;
+  rate?: number | null; rateDate?: string | null; rateStale?: boolean;
+  balanceKzt?: number | null; currentBalanceKzt?: number | null; revaluationKzt?: number | null;
+  /** Frozen money (deposit until a date): in capital, not in the liquid pool, Safe-to-Spend or reserve days. */
+  frozenUntil?: string | null; frozenAmount?: number | null; availableBalance?: number | null;
+  frozenKzt?: number | null; availableKzt?: number | null;
+  interestRate?: number | null; earlyWithdrawal?: "yes" | "no" | "lose_interest" | null;
+  /** Last digits of the card/account number from statements ("*1234"). */
+  numberMask?: string | null;
+  kind?: AccountKind | null; confirmed?: boolean;
+  /** false: no checkpoint or statement balance, `balance` is a placeholder and must not be shown as 0. */
+  balanceKnown?: boolean; balanceAsOf?: string | null; balanceSource?: "manual" | "statement" | null;
+  /** Checkpoint plus manual operations after it; null when the balance is unknown. */
+  currentBalance?: number | null;
+}
+export type Availability = Partial<Pick<Account, "frozenUntil" | "interestRate" | "earlyWithdrawal">> & { frozenAmount?: number | null };
+export interface AccountIn extends Availability { bank: string; name: string; kind: AccountKind; currency?: AccountCurrency; balance?: number | null; balanceAsOf?: string | null }
+export interface TransferIn { fromAccountId: string; toAccountId: string; amount: number; toAmount?: number | null; date: string; note?: string | null; requestId: string }
+export interface TransferCandidate { outId: string; inIds: string[] }
+export interface Checkpoint { id: string; accountId: string; balance: number; asOf: string; source: "manual" | "statement" }
+export type TxKind = "expense" | "income" | "income_salary" | "income_other" | "income_interest" | "transfer_own" | "transfer_third_party";
 
 export interface Category { id: string; name: string; color: string }
 export interface Transaction {
-  id: string; date: string; amount: number; currency: "KZT" | "USD";
+  id: string; date: string; amount: number; currency: string;
   merchant: string; categoryId: string; accountId: string; needsReview: boolean; internal?: boolean;
+  /** Effective type: the user's decision when kindSource = "user", otherwise derived from the import. */
+  kind?: TxKind; kindSource?: "user" | "auto";
+  source?: "import" | "manual"; note?: string | null; voided?: boolean; transferGroup?: string | null;
+  /** Imported values when the user corrected amount or date (the original is never overwritten). */
+  original?: { amount: number; date: string } | null;
 }
+export interface TransactionIn { accountId: string; date: string; amount: number; merchant: string; category?: string | null; kind?: TxKind | null; note?: string | null }
+export type TransactionPatch = Partial<Pick<TransactionIn, "accountId" | "date" | "amount" | "merchant" | "note">> & { category?: string };
+export interface TransactionEdit { action: "create" | "update" | "void" | "restore" | "delete"; before?: Record<string, unknown> | null; after?: Record<string, unknown> | null; at: string }
+export interface PlannedPayment {
+  id: string; name: string; direction: "expense" | "income"; amount: number; dueOn: string; dueTo?: string | null;
+  repeat: "once" | "yearly"; categoryId?: string | null; accountId?: string | null; mandatory: boolean; movable: boolean;
+  status: "planned" | "partial" | "paid" | "cancelled"; paid: number; left: number;
+  settlements: { transactionId: string; amount: number; period: string }[];
+  /** The entered amount when a rule computes `amount`. */
+  baseAmount?: number | null; rule?: RuleInfo | null;
+}
+export type PlannedIn = Pick<PlannedPayment, "name" | "direction" | "amount" | "dueOn" | "repeat" | "mandatory" | "movable"> & { dueTo?: string | null; category?: string | null; accountId?: string | null };
+export type PlannedPatch = Partial<PlannedIn> & { cancelled?: boolean };
+export interface SettleIn { transactionId?: string; amount?: number; accountId?: string; date?: string }
+export interface TxQuery { from?: string; to?: string; account?: string; bank?: string; q?: string }
 
-export interface ImportReport { id: string; status: "processing" | "done" | "failed"; parsed: number; needsReview: number; period: { from: string; to: string }; bank: string; warnings?: string[] }
+export interface ImportReport { id: string; status: "processing" | "done" | "failed"; parsed: number; needsReview: number; period: { from: string; to: string }; bank: string; warnings?: string[]; accountId?: string | null; accountName?: string | null }
+export interface ImportPreview {
+  bank: string; accountName: string; numberMask?: string | null; currency: string; periodFrom?: string | null; periodTo?: string | null;
+  operations: number; closingBalance?: number | null; suggestedAccountId?: string | null; matchedBy?: "number" | "name" | null;
+  /** true: the account could not be identified by its number — the user picks one or "new". */
+  needsChoice: boolean; accounts: { id: string; bank: string; name: string; currency: string; numberMask?: string | null }[];
+  warnings?: string[];
+}
 
 export interface Forecasted { as_of: string; model_version: string }
 
@@ -30,11 +88,32 @@ export interface DashboardSummary { month: string; income: number; expense: numb
 
 export interface Insight { id: string; status: Status; title: string; why: string; action: string; to: string }
 
-export interface Obligation { id: string; name: string; kind: "credit" | "installment" | "rent" | "subscription" | "utility"; amount: number; dayOfMonth: number; endsAt?: string; confirmed: boolean }
+export type RuleKind = "per_day" | "percent_income" | "percent_of" | "fixed_plus" | "formula";
+export interface RuleIn { kind: RuleKind; params: Record<string, string | number>; expression?: string | null }
+/** How an amount is computed; amounts are null when an input is unknown (never 0). */
+export interface RuleInfo {
+  kind: RuleKind; params: Record<string, string | number>; expression: string; validFrom: string;
+  amountThisMonth: number | null; explanation: string; estimate: boolean; overridden?: boolean; missing?: string | null;
+  amountsByMonth: Record<string, number | null>;
+}
+export interface RulePreview { amount?: number | null; explanation?: string | null; estimate?: boolean; missing?: string | null; expression?: string | null; error?: string | null; errorPos?: number | null }
+export interface Obligation { rule?: RuleInfo | null; id: string; name: string; kind: "credit" | "installment" | "rent" | "subscription" | "utility"; amount: number; dayOfMonth: number; endsAt?: string | null; confirmed: boolean; rejected?: boolean; categoryId?: string | null; debtLeft?: number | null }
+export type ObligationIn = Pick<Obligation, "name" | "kind" | "amount" | "dayOfMonth"> & { endsAt?: string | null; category?: string | null; debtLeft?: number | null };
+export type Decision = { confirmed?: boolean; rejected?: boolean };
 export interface ObligationsCalendar { months: { month: string; credit: number; installment: number; regular: number }[]; income: number }
-export interface DtiPoint { month: string; dti: number }
+/** dti is null when the month has no usable income (no income, or far below the confirmed expected one). */
+export interface DtiPoint {
+  month: string; dti: number | null; debt?: number; income?: number; expectedIncome?: number | null;
+  incomeSource?: "operations"; status?: "ok" | "no_income" | "incomplete_income" | "check"; payments?: number;
+}
+export interface DtiPayment { id: string; date: string; merchant: string; amount: number }
 
-export interface IncomeSource { id: string; name: string; amount: number; dayOfMonth: number; confirmed: boolean }
+export interface IncomeSource {
+  id: string; name: string; amount: number; dayOfMonth: number; confirmed: boolean; rejected?: boolean;
+  /** Payout varies: cautious plans use amountMin (FR-29). */
+  amountMin?: number | null; amountMax?: number | null;
+}
+export type IncomeIn = Pick<IncomeSource, "name" | "amount" | "dayOfMonth"> & { amountMin?: number | null; amountMax?: number | null };
 
 export interface ResilienceComponent { key: string; name: string; status: Status; value: string; explain: string; action: string }
 export interface Resilience extends Forecasted { score: number; pShortfall: number; runwayMonths: number; components: ResilienceComponent[] }
@@ -54,4 +133,17 @@ export interface CityPrice { item: string; unit: string; price: number; change: 
 export interface Goal { id: string; name: string; target: number; saved: number; monthly: number; deadline: string }
 export interface GoalProjection { goalId: string; etaMonth: string; requiredMonthly: number; onTrack: boolean }
 
-export interface MerchantRule { id: string; merchant: string; categoryId: string }
+export interface MerchantRule { id: string; merchant: string; categoryId: string; kind?: TxKind | null }
+
+/** A smart insight from the knowledge base: fact from computed data, one action that only opens a view. */
+export interface SmartCard {
+  key: string; entryId: string; title: string; text: string; fact: string; module: string; tab: string;
+  actionLabel: string; actionIntent: "review_data" | "review_scenario"; tier: number; tierName: string; rank: number;
+  critical: boolean;
+  why: { signal?: string | null; formula: string; inputs: Record<string, unknown>; evidence: string[]; asOf: string; kbVersion: string; entryVersion: string; status?: string };
+}
+
+export interface InsightSettings {
+  thresholds: { key: string; label: string; unit: "money" | "share" | "days" | "months"; value: number; default: number; isDefault: boolean }[];
+  sensitive: { id: string; title: string; enabled: boolean }[];
+}

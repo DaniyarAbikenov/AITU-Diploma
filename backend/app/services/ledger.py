@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.catalog import FIXED_CATEGORIES
 from app.models import Account, Category, IncomeSource, MacroSeries, Obligation, Transaction, User
+from app.services.accounts import eff_amount, eff_date, is_cashflow
 
 WINDOW_DAYS = 90
 
@@ -73,31 +74,52 @@ def clamp_day(year: int, month: int, day: int) -> int:
 
 
 def build_context(db: Session, user: User, as_of: date) -> Context:
-    accounts = db.scalars(select(Account).where(Account.user_id == user.id, Account.currency == "KZT")).all()
+    accounts = db.scalars(select(Account).where(Account.user_id == user.id, Account.perimeter == "personal")).all()
     obligations = [
-        Ob(o.name, o.kind, o.amount_minor / 100, o.day_of_month, o.ends_at)
-        for o in db.scalars(select(Obligation).where(Obligation.user_id == user.id))
+        Ob(o.name, o.kind, _rule_amount(db, user, o, as_of), o.day_of_month, o.ends_at)
+        for o in db.scalars(select(Obligation).where(Obligation.user_id == user.id, Obligation.rejected.is_(False)))
     ]
     incomes = [
         Inc(i.name, i.amount_minor / 100, i.day_of_month)
-        for i in db.scalars(select(IncomeSource).where(IncomeSource.user_id == user.id))
+        for i in db.scalars(select(IncomeSource).where(IncomeSource.user_id == user.id, IncomeSource.rejected.is_(False)))
     ]
     horizon_start = as_of - timedelta(days=400)
     rows = db.execute(
-        select(Transaction.booked_on, Transaction.amount_minor, Transaction.category_id).where(
-            Transaction.user_id == user.id, Transaction.internal.is_(False), Transaction.currency == "KZT",
-            Transaction.booked_on >= horizon_start, Transaction.booked_on <= as_of)
+        select(eff_date, eff_amount, Transaction.category_id).where(
+            Transaction.user_id == user.id, is_cashflow(), Transaction.currency == "KZT",
+            eff_date >= horizon_start, eff_date <= as_of)
     ).all()
     txs = [Tx(r[0], r[1] / 100, r[2]) for r in rows]
     cats = db.scalars(select(Category)).all()
     cpi = db.scalar(select(MacroSeries).where(MacroSeries.code == "cpi").order_by(MacroSeries.as_of.desc()))
     ctx = Context(
-        as_of=as_of, balance=sum(a.balance_minor for a in accounts) / 100, obligations=obligations, incomes=incomes,
+        as_of=as_of, balance=_balance_kzt(db, accounts) / 100, obligations=obligations, incomes=incomes,
         txs=txs, cat_names={c.id: c.name for c in cats}, cat_fx={c.id: c.fx_sensitivity for c in cats},
         cpi_now=cpi.value if cpi else 9.0,
     )
     _fill_variable_spend(ctx)
     return ctx
+
+
+def _rule_amount(db: Session, user: User, o: Obligation, as_of: date) -> float:
+    """Monthly amount for the engines: the rule's value this month when it can be computed, else the entered one."""
+    from app.services import rules
+
+    c = rules.compute(db, user, "obligation", o.id, month_key(as_of), as_of)
+    return float(c.amount) if c is not None and c.amount is not None else o.amount_minor / 100
+
+
+def _balance_kzt(db: Session, accounts: list[Account]) -> int:
+    """All accounts in tenge: foreign-currency balances at the latest official rate (never summed unconverted)."""
+    from app.services import fx
+    from app.services.accounts import frozen_minor
+
+    total = 0
+    for a in accounts:
+        available = a.balance_minor - frozen_minor(a, a.balance_minor)  # frozen deposits are not spendable money
+        kzt = fx.to_kzt_minor(available, fx.latest(db, a.currency))
+        total += kzt or 0
+    return total
 
 
 def _fill_variable_spend(ctx: Context) -> None:

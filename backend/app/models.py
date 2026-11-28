@@ -1,7 +1,19 @@
 """Data model (see docs/architecture.md section 3). Money columns are integer minor units."""
 from datetime import date, datetime, timezone
 
-from sqlalchemy import JSON, BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    false,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -19,6 +31,13 @@ class User(Base):
     city: Mapped[str] = mapped_column(String(80), default="Алматы")
     currency: Mapped[str] = mapped_column(String(3), default="KZT")
     password_hash: Mapped[str] = mapped_column(String(255))
+    # Personal plan. NULL means "not provided yet" and is never treated as zero (FR-04, FR-25).
+    timezone: Mapped[str] = mapped_column(String(40), default="Asia/Almaty", server_default="Asia/Almaty")
+    planned_income_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    essential_expenses_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    work_hours_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # smart insights: opt-in of sensitive entries and thresholds (null = defaults of the knowledge base addendum)
+    insight_settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
@@ -30,6 +49,56 @@ class Account(Base):
     name: Mapped[str] = mapped_column(String(120))
     currency: Mapped[str] = mapped_column(String(3), default="KZT")
     balance_minor: Mapped[int] = mapped_column(BigInteger, default=0)
+    kind: Mapped[str | None] = mapped_column(String(20), nullable=True)  # current | savings | deposit | cash; NULL = not set
+    # personal | business (sole proprietor): business money is never mixed into personal totals (BR-03)
+    perimeter: Mapped[str] = mapped_column(String(10), default="personal", server_default="personal")
+    # availability: money until `frozen_until` is the user's (counts in capital) but not available (not in the liquid
+    # pool, Safe-to-Spend or reserve days). frozen_minor = the blocked part; NULL with a date = the whole balance.
+    # stable link to bank statements, independent of the display name: "<bank>|*1234" (last digits of the card or
+    # account number from the statement header, never the full number) or "<bank>|name:<header name>" when the
+    # header has no number. number_mask keeps only the last 4 digits.
+    statement_key: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    number_mask: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    frozen_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    frozen_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    interest_rate: Mapped[float | None] = mapped_column(Float, nullable=True)  # % a year, for information
+    early_withdrawal: Mapped[str | None] = mapped_column(String(20), nullable=True)  # yes | no | lose_interest
+    # accounts created by an import are proposals until the user confirms them in the UI
+    confirmed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+
+
+class AccountCheckpoint(Base):
+    """A known balance on a date: entered by the user or taken from a statement header (closing balance).
+    The account balance is the latest checkpoint, never a sum of operations (FR-12)."""
+    __tablename__ = "account_checkpoints"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    balance_minor: Mapped[int] = mapped_column(BigInteger)
+    as_of: Mapped[date] = mapped_column(Date)
+    source: Mapped[str] = mapped_column(String(20), default="manual")  # manual | statement
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class FxRate(Base):
+    """Latest official rate per currency: tenge for 1 unit (nationalbank.kz). rate_date is the NBK publication date,
+    fetched_at the moment it was received; source 'demo-seed' means no official rate was received yet."""
+    __tablename__ = "fx_rates"
+    currency: Mapped[str] = mapped_column(String(3), primary_key=True)
+    rate: Mapped[float] = mapped_column(Float)
+    rate_date: Mapped[date] = mapped_column(Date)
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    source: Mapped[str] = mapped_column(String(20), default="nbk")
+
+
+class FxRateHistory(Base):
+    """One official rate per currency and publication date, kept for revaluation of foreign-currency accounts."""
+    __tablename__ = "fx_rate_history"
+    __table_args__ = (UniqueConstraint("currency", "rate_date", name="uq_fx_history"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    currency: Mapped[str] = mapped_column(String(3), index=True)
+    rate_date: Mapped[date] = mapped_column(Date)
+    rate: Mapped[float] = mapped_column(Float)
 
 
 class Category(Base):
@@ -48,6 +117,7 @@ class ImportBatch(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     bank: Mapped[str] = mapped_column(String(80))
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
     source: Mapped[str] = mapped_column(String(20), default="synthetic")  # synthetic | pdf
     status: Mapped[str] = mapped_column(String(20), default="done")
     parsed: Mapped[int] = mapped_column(Integer, default=0)
@@ -72,6 +142,19 @@ class Transaction(Base):
     category_source: Mapped[str] = mapped_column(String(10), default="rule")  # rule | model | user
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
     internal: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The user's own decision about the operation type. It overrides the imported `internal` flag and the
+    # amount sign; the imported original is kept untouched (FR-10, FR-17).
+    user_kind: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # import = from a bank statement (only type and category may be changed), manual = entered by the user
+    source: Mapped[str] = mapped_column(String(10), default="import", server_default="import")
+    # user corrections over an imported operation (NULL = keep the imported value)
+    user_amount_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    user_booked_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    user_note: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # cancelled by the user: kept for history, excluded from every calculation
+    voided: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # both legs of a move between the user's own accounts share this id (manual transfer or confirmed pair)
+    transfer_group: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     dedup_key: Mapped[str] = mapped_column(String(64))
 
 
@@ -82,6 +165,7 @@ class MerchantRule(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     merchant: Mapped[str] = mapped_column(String(200))
     category_id: Mapped[str] = mapped_column(ForeignKey("categories.id"))
+    kind: Mapped[str | None] = mapped_column(String(30), nullable=True)  # operation type for future imports
 
 
 class Obligation(Base):
@@ -95,6 +179,9 @@ class Obligation(Base):
     ends_at: Mapped[str | None] = mapped_column(String(7), nullable=True)  # YYYY-MM
     confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     detected: Mapped[bool] = mapped_column(Boolean, default=False)
+    rejected: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    category_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    debt_left_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # remaining loan, if known
 
 
 class IncomeSource(Base):
@@ -106,6 +193,119 @@ class IncomeSource(Base):
     day_of_month: Mapped[int] = mapped_column(Integer)
     confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     detected: Mapped[bool] = mapped_column(Boolean, default=False)
+    rejected: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # The amount varies from payout to payout: cautious plans use the lower bound (FR-29).
+    amount_min_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    amount_max_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
+class PlannedPayment(Base):
+    """A planned item that is not a monthly obligation: a one-off or yearly expense or income on a date
+    (optionally a window due_on..due_to). Payment is recorded by linking actual operations (settlements)."""
+    __tablename__ = "planned_payments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    direction: Mapped[str] = mapped_column(String(10), default="expense")  # expense | income
+    amount_minor: Mapped[int] = mapped_column(BigInteger)
+    due_on: Mapped[date] = mapped_column(Date)
+    due_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    repeat: Mapped[str] = mapped_column(String(10), default="once")  # once | yearly
+    category_id: Mapped[str | None] = mapped_column(ForeignKey("categories.id"), nullable=True)
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
+    mandatory: Mapped[bool] = mapped_column(Boolean, default=True)
+    movable: Mapped[bool] = mapped_column(Boolean, default=False)
+    cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class PlannedSettlement(Base):
+    """Links an actual operation to a planned item (partial payments allowed). `period` is the due date of the
+    occurrence it pays, so a yearly item keeps its history."""
+    __tablename__ = "planned_settlements"
+    __table_args__ = (UniqueConstraint("planned_id", "transaction_id", name="uq_settlement"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    planned_id: Mapped[int] = mapped_column(ForeignKey("planned_payments.id"), index=True)
+    transaction_id: Mapped[int] = mapped_column(ForeignKey("transactions.id"), index=True)
+    amount_minor: Mapped[int] = mapped_column(BigInteger)
+    period: Mapped[date] = mapped_column(Date)
+
+
+class TransactionEdit(Base):
+    """Audit of user corrections: what changed, before and after. Imported originals are never overwritten."""
+    __tablename__ = "transaction_edits"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    transaction_id: Mapped[int] = mapped_column(Integer, index=True)
+    action: Mapped[str] = mapped_column(String(12))  # create | update | void | restore | delete
+    before: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    after: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AmountRule(Base):
+    """A rule that computes the monthly amount of an obligation or a planned item. Editing a rule adds a version
+    valid from a month; earlier months keep the version they were computed with (paid facts are never rewritten)."""
+    __tablename__ = "amount_rules"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    target_type: Mapped[str] = mapped_column(String(12))  # obligation | planned
+    target_id: Mapped[int] = mapped_column(Integer, index=True)
+    kind: Mapped[str] = mapped_column(String(20))  # per_day | percent_income | percent_of | fixed_plus | formula
+    params: Mapped[dict] = mapped_column(JSON, default=dict)
+    expression: Mapped[str] = mapped_column(String(300))
+    valid_from: Mapped[str] = mapped_column(String(7))  # YYYY-MM
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AmountOverride(Base):
+    """The user's own amount for one month, over the rule."""
+    __tablename__ = "amount_overrides"
+    __table_args__ = (UniqueConstraint("user_id", "target_type", "target_id", "month", name="uq_override"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    target_type: Mapped[str] = mapped_column(String(12))
+    target_id: Mapped[int] = mapped_column(Integer)
+    month: Mapped[str] = mapped_column(String(7))
+    amount_minor: Mapped[int] = mapped_column(BigInteger)
+
+
+class DailyNeed(Base):
+    """Everyday spending the user plans (food, transport...): per day or per month. covered_by names a payment or a
+    planned item that already contains it ("ob_5", "pl_7"), so it is not deducted twice."""
+    __tablename__ = "daily_needs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    amount_minor: Mapped[int] = mapped_column(BigInteger)
+    period: Mapped[str] = mapped_column(String(5), default="day")  # day | month
+    covered_by: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+
+class AllocationRule(Base):
+    """What the user wants to do with every salary payout, in order. Percents and sums are the user's own."""
+    __tablename__ = "allocation_rules"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    name: Mapped[str] = mapped_column(String(80))
+    kind: Mapped[str] = mapped_column(String(10))  # tax | reserve | goals
+    mode: Mapped[str] = mapped_column(String(10))  # percent | fixed
+    value: Mapped[int] = mapped_column(BigInteger)  # basis points for percent, minor units for fixed
+
+
+class IncomeAllocation(Base):
+    """The user's confirmed split of one payout. Nothing is transferred: until the user marks it done, the amounts
+    are protected (not offered for spending)."""
+    __tablename__ = "income_allocations"
+    __table_args__ = (UniqueConstraint("user_id", "transaction_id", name="uq_income_allocation"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    transaction_id: Mapped[int] = mapped_column(Integer)
+    items: Mapped[list] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(10))  # confirmed | done | skipped
 
 
 class Goal(Base):
@@ -126,6 +326,19 @@ class SavedScenario(Base):
     name: Mapped[str] = mapped_column(String(200))
     shocks: Mapped[list] = mapped_column(JSON)
     created_at: Mapped[date] = mapped_column(Date)
+
+
+class InsightState(Base):
+    """Hidden or snoozed smart insight: `key` = entry + root cause + entity + period; `fingerprint` of the evidence
+    values brings it back early when the facts change materially."""
+    __tablename__ = "insight_states"
+    __table_args__ = (UniqueConstraint("user_id", "key", name="uq_insight_state"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    key: Mapped[str] = mapped_column(String(200))
+    state: Mapped[str] = mapped_column(String(10))  # hidden | snoozed
+    until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    fingerprint: Mapped[str] = mapped_column(String(64), default="")
 
 
 class InsightDismissal(Base):

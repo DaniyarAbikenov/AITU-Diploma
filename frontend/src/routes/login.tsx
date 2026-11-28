@@ -2,33 +2,89 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { PublicFrame } from "@/components/navigator/PublicFrame";
+import { ru } from "@/i18n/ru";
 import { signIn } from "@/lib/auth";
-import { AuthFrame } from "@/components/AuthFrame";
 
 export const Route = createFileRoute("/login")({
-  head: () => ({ meta: [
-    { title: "Вход — Запас" }, { name: "description", content: "Войдите, чтобы увидеть прогноз и индекс финансовой устойчивости." },
-    { property: "og:title", content: "Вход — Запас" }, { property: "og:description", content: "Вход в сервис прогноза финансовой устойчивости." },
-  ] }),
+  head: () => ({
+    meta: [
+      { title: "Вход — Financial Life Navigator" },
+      { name: "description", content: "Войдите, чтобы увидеть свои деньги, план и прогноз." },
+    ],
+  }),
   component: Login,
 });
 
-const loginSchema = z.object({ email: z.string().email("Введите корректный email"), password: z.string().min(6, "Минимум 6 символов") });
+const t = ru.pub;
+const loginSchema = z.object({
+  email: z.string().email(t.emailInvalid),
+  password: z.string().min(6, t.passwordShort(6)),
+});
+
+/** ?next=/... returns the user to the page that asked for sign-in (local paths only); default is Navigator. */
+function safeNext(): "/navigator" | "/onboarding" {
+  const next =
+    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("next");
+  return next === "/onboarding" ? "/onboarding" : "/navigator";
+}
 
 function Login() {
   const navigate = useNavigate();
-  const { register, handleSubmit, setError, formState: { errors } } = useForm({ resolver: zodResolver(loginSchema), defaultValues: { email: "demo@zapas.kz", password: "demo1234" } });
+  const {
+    register,
+    handleSubmit,
+    setError,
+    formState: { errors, isSubmitting },
+  } = useForm({ resolver: zodResolver(loginSchema), defaultValues: { email: "", password: "" } });
   return (
-    <AuthFrame title="С возвращением">
-      <form className="space-y-4" onSubmit={handleSubmit(async (v) => { try { await signIn(v.email, v.password); navigate({ to: "/dashboard" }); } catch (e) { setError("password", { message: (e as Error).message }); } })}>
-        <div className="space-y-1.5"><Label htmlFor="email">Email</Label><Input id="email" type="email" autoComplete="email" {...register("email")} aria-invalid={!!errors.email} />{errors.email && <p className="text-xs text-risk">{errors.email.message}</p>}</div>
-        <div className="space-y-1.5"><Label htmlFor="password">Пароль</Label><Input id="password" type="password" autoComplete="current-password" {...register("password")} aria-invalid={!!errors.password} />{errors.password && <p className="text-xs text-risk">{errors.password.message}</p>}</div>
-        <Button type="submit" className="w-full">Войти</Button>
-        <p className="text-center text-sm text-muted-foreground">Нет аккаунта? <Link to="/register" className="text-primary underline-offset-4 hover:underline">Зарегистрироваться</Link></p>
-      </form>
-    </AuthFrame>
+    <PublicFrame>
+      <div className="nav-panel nav-public-card">
+        <h1>{t.loginTitle}</h1>
+        <form
+          className="nav-form"
+          onSubmit={handleSubmit(async (v) => {
+            try {
+              await signIn(v.email, v.password);
+              navigate({ to: safeNext() });
+            } catch (e) {
+              setError("password", { message: (e as Error).message });
+            }
+          })}
+        >
+          <label className="nav-field">
+            {t.email}
+            <input
+              type="email"
+              autoComplete="email"
+              aria-invalid={!!errors.email}
+              {...register("email")}
+            />
+            {errors.email && <span className="nav-field-error">{errors.email.message}</span>}
+          </label>
+          <label className="nav-field">
+            {t.password}
+            <input
+              type="password"
+              autoComplete="current-password"
+              aria-invalid={!!errors.password}
+              {...register("password")}
+            />
+            {errors.password && (
+              <span className="nav-field-error" role="alert">
+                {errors.password.message}
+              </span>
+            )}
+          </label>
+          <button type="submit" className="nav-primary" disabled={isSubmitting}>
+            {t.login}
+          </button>
+          <p className="nav-small">
+            {t.noAccount} <Link to="/register">{t.register}</Link> ·{" "}
+            <a href="/navigator?mode=demo">{t.demo}</a>
+          </p>
+        </form>
+      </div>
+    </PublicFrame>
   );
 }

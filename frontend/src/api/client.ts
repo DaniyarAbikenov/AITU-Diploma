@@ -1,5 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import * as m from "./mock";
+import { readNavigator, mutateNavigator, resetNavigator } from "./navigator-store";
+import type { NavigatorAction } from "@/lib/navigator";
 import type * as T from "./types";
 import { getToken } from "@/lib/auth";
 
@@ -24,7 +26,38 @@ async function call<R>(path: string, mock: () => R, init?: RequestInit): Promise
 const body = (method: string, b: unknown): RequestInit => ({ method, body: JSON.stringify(b) });
 
 export const api = {
+  navigator: async () => readNavigator(),
+  updateNavigator: async (action: NavigatorAction) => mutateNavigator(action),
+  resetNavigator: async () => resetNavigator(),
+  rates: () => call<T.Rates>("/rates", () => m.rates),
+  me: () => call<T.User>("/me", () => m.db.me),
+  updateMe: (patch: T.ProfilePatch) => call<T.User>("/me", () => Object.assign(m.db.me, patch), body("PATCH", patch)),
   accounts: () => call<T.Account[]>("/accounts", () => m.accounts),
+  createAccount: (a: T.AccountIn) => call<T.Account>("/accounts", () => m.createAccount(a), body("POST", a)),
+  updateAccount: (id: string, patch: Partial<Pick<T.Account, "bank" | "name" | "kind" | "confirmed" | "currency">> & T.Availability) =>
+    call<T.Account>("/accounts/" + id, () => Object.assign(m.accounts.find((a) => a.id === id)!, patch), body("PATCH", patch)),
+  addCheckpoint: (id: string, cp: { balance: number; asOf: string; source?: "manual" | "statement" }) =>
+    call<T.Account>(`/accounts/${id}/checkpoints`, () => m.addCheckpoint(id, cp), body("POST", cp)),
+  transactionsFor: (f: T.TxQuery) => {
+    const p = new URLSearchParams();
+    if (f.from) p.set("date_from", f.from);
+    if (f.to) p.set("date_to", f.to);
+    if (f.account) p.set("account", f.account);
+    if (f.bank) p.set("bank", f.bank);
+    if (f.q) p.set("q", f.q);
+    return call<T.Transaction[]>("/transactions?" + p, () => m.filterTransactions(f));
+  },
+  createTx: (t: T.TransactionIn) => call<T.Transaction>("/transactions", () => m.createTx(t), body("POST", t)),
+  updateTx: (id: string, patch: T.TransactionPatch) => call<T.Transaction>("/transactions/" + id, () => m.updateTx(id, patch), body("PATCH", patch)),
+  deleteTx: (id: string) => call("/transactions/" + id, () => { m.db.transactions = m.db.transactions.filter((x) => x.id !== id); return { ok: true }; }, { method: "DELETE" }),
+  voidTx: (id: string, voided: boolean) => call<T.Transaction>(`/transactions/${id}/${voided ? "void" : "restore"}`, () => Object.assign(m.db.transactions.find((x) => x.id === id)!, { voided }), { method: "POST" }),
+  txHistory: (id: string) => call<T.TransactionEdit[]>(`/transactions/${id}/history`, () => []),
+  moveOperations: (fromId: string, toId: string) => call(`/accounts/${fromId}/move-operations`, () => { m.db.transactions.forEach((t) => { if (t.accountId === fromId) t.accountId = toId; }); return { ok: true }; }, body("POST", { targetAccountId: toId })),
+  createTransfer: (tr: T.TransferIn) => call<T.Transaction[]>("/transfers", () => m.createTransfer(tr), body("POST", tr)),
+  transferCandidates: () => call<T.TransferCandidate[]>("/transfers/candidates", () => []),
+  linkTransfer: (outId: string, inId: string) => call<T.Transaction[]>("/transfers/link", () => [], body("POST", { outId, inId })),
+  setTxKind: (id: string, kind: T.TxKind | null, saveRule = false) =>
+    call<T.Transaction>(`/transactions/${id}/kind`, () => m.setTxKind(id, kind, saveRule), body("PATCH", { kind, saveRule })),
   categories: () => call<T.Category[]>("/categories", () => m.categories),
   transactions: () => call<T.Transaction[]>("/transactions", () => m.db.transactions),
   recategorize: (id: string, categoryId: string) => call("/transactions/" + id, () => {
@@ -36,9 +69,14 @@ export const api = {
   }, body("POST", { merchant, category: categoryId })),
   rules: () => call<T.MerchantRule[]>("/merchant-rules", () => m.db.rules),
   deleteRule: (id: string) => call("/merchant-rules/" + id, () => { m.db.rules = m.db.rules.filter((r) => r.id !== id); return { ok: true }; }, { method: "DELETE" }),
-  importStatement: (bank: string, file?: File) => {
+  previewStatement: (bank: string, file: File) => {
+    const form = new FormData(); form.append("bank", bank); form.append("file", file);
+    return call<T.ImportPreview>("/imports/preview", () => m.fakePreview(bank), { method: "POST", body: form });
+  },
+  /** accountId: "auto" | "new" | an account id chosen in the preview. */
+  importStatement: (bank: string, file?: File, accountId = "auto") => {
     let init = body("POST", { bank });
-    if (file) { const form = new FormData(); form.append("bank", bank); form.append("file", file); init = { method: "POST", body: form }; }
+    if (file) { const form = new FormData(); form.append("bank", bank); form.append("file", file); form.append("accountId", accountId); init = { method: "POST", body: form }; }
     return call<T.ImportReport>("/imports", () => m.fakeImport(bank), init);
   },
   summary: (month: string) => call<T.DashboardSummary>(`/dashboard/summary?month=${month}`, () => m.summary(month)),
@@ -48,9 +86,35 @@ export const api = {
   dismissInsight: (id: string) => call(`/insights/${id}/dismiss`, () => { m.db.dismissed.add(id); return { ok: true }; }, { method: "POST" }),
   obligations: () => call<T.Obligation[]>("/obligations", () => m.db.obligations),
   confirmObligation: (id: string, confirmed: boolean) => call("/obligations/" + id, () => { const o = m.db.obligations.find((x) => x.id === id); if (o) o.confirmed = confirmed; return o; }, body("PATCH", { confirmed })),
+  addObligation: (o: T.ObligationIn) => call<T.Obligation>("/obligations", () => { const n = { ...o, id: "o" + Date.now(), confirmed: true, rejected: false, categoryId: o.category ?? null }; m.db.obligations.push(n); return n; }, body("POST", o)),
+  updateObligation: (id: string, patch: Partial<T.ObligationIn>) => call<T.Obligation>("/obligations/" + id, () => Object.assign(m.db.obligations.find((x) => x.id === id)!, patch), body("PATCH", patch)),
+  deleteObligation: (id: string) => call("/obligations/" + id, () => { m.db.obligations = m.db.obligations.filter((x) => x.id !== id); return { ok: true }; }, { method: "DELETE" }),
+  ruleVariables: () => call<{ name: string; description: string }[]>("/rules/variables", () => m.ruleVariables),
+  rulePreview: (r: T.RuleIn & { month?: string }) => call<T.RulePreview>("/rules/preview", () => m.rulePreview(r), body("POST", r)),
+  setRule: (type: "obligation" | "planned", id: string, r: T.RuleIn) => call<T.RuleInfo>(`/rules/${type}/${id}`, () => m.setRule(type, id, r), body("PUT", r)),
+  deleteAmountRule: (type: "obligation" | "planned", id: string) => call(`/rules/${type}/${id}`, () => m.deleteAmountRule(type, id), { method: "DELETE" }),
+  setOverride: (type: "obligation" | "planned", id: string, month: string, amount: number | null) =>
+    call(`/overrides/${type}/${id}/${month}`, () => ({ ok: true }), body("PUT", { amount })),
+  insightSettings: () => call<T.InsightSettings>("/insights/settings", () => m.insightSettings),
+  updateInsightSettings: (patch: { thresholds?: Record<string, number | null>; sensitive?: Record<string, boolean> }) =>
+    call<T.InsightSettings>("/insights/settings", () => m.patchInsightSettings(patch), body("PATCH", patch)),
+  smartInsights: (surface: "dashboard" | "calendar" | "all" = "dashboard") => call<T.SmartCard[]>(`/insights/smart?surface=${surface}`, () => m.db.smart),
+  hideSmart: (key: string) => call("/insights/smart/hide", () => { m.db.smart = m.db.smart.filter((c) => c.key !== key); return { ok: true }; }, body("POST", { key })),
+  snoozeSmart: (key: string, days = 3) => call("/insights/smart/snooze", () => ({ ok: true }), body("POST", { key, days })),
+  planned: () => call<T.PlannedPayment[]>("/planned-payments", () => m.db.planned),
+  addPlanned: (p: T.PlannedIn) => call<T.PlannedPayment>("/planned-payments", () => m.addPlanned(p), body("POST", p)),
+  updatePlanned: (id: string, patch: T.PlannedPatch) => call<T.PlannedPayment>("/planned-payments/" + id, () => m.updatePlanned(id, patch), body("PATCH", patch)),
+  deletePlanned: (id: string) => call("/planned-payments/" + id, () => { m.db.planned = m.db.planned.filter((x) => x.id !== id); return { ok: true }; }, { method: "DELETE" }),
+  settlePlanned: (id: string, s: T.SettleIn) => call<T.PlannedPayment>(`/planned-payments/${id}/settle`, () => m.settlePlanned(id, s), body("POST", s)),
+  decideObligation: (id: string, d: T.Decision) => call<T.Obligation>("/obligations/" + id, () => m.decide(m.db.obligations, id, d), body("PATCH", d)),
   calendar: () => call<T.ObligationsCalendar>("/obligations/calendar?months=12", m.calendar),
   dti: () => call<T.DtiPoint[]>("/obligations/dti-history", m.dtiHistory),
+  dtiPayments: (month: string) => call<T.DtiPayment[]>(`/obligations/dti-payments?month=${month}`, () => []),
   income: () => call<T.IncomeSource[]>("/income-sources", () => m.db.income),
+  decideIncome: (id: string, d: T.Decision) => call<T.IncomeSource>("/income-sources/" + id, () => m.decide(m.db.income, id, d), body("PATCH", d)),
+  addIncome: (i: T.IncomeIn) => call<T.IncomeSource>("/income-sources", () => { const n = { ...i, id: "i" + Date.now(), confirmed: true, rejected: false }; m.db.income.push(n); return n; }, body("POST", i)),
+  updateIncome: (id: string, patch: Partial<T.IncomeIn>) => call<T.IncomeSource>("/income-sources/" + id, () => Object.assign(m.db.income.find((x) => x.id === id)!, patch), body("PATCH", patch)),
+  deleteIncome: (id: string) => call("/income-sources/" + id, () => { m.db.income = m.db.income.filter((x) => x.id !== id); return { ok: true }; }, { method: "DELETE" }),
   confirmIncome: (id: string, confirmed: boolean) => call("/income-sources/" + id, () => { const o = m.db.income.find((x) => x.id === id); if (o) o.confirmed = confirmed; return o; }, body("PATCH", { confirmed })),
   resilience: () => call<T.Resilience>("/resilience", m.resilience),
   resilienceHistory: () => call<{ month: string; score: number }[]>("/resilience/history", m.resilienceHistory),
@@ -58,6 +122,7 @@ export const api = {
   runScenario: (shocks: T.Shock[]) => call<T.ScenarioResult>("/scenarios/run", () => m.runScenario(shocks), body("POST", { shocks })),
   savedScenarios: () => call<T.SavedScenario[]>("/scenarios", () => m.db.scenarios),
   saveScenario: (name: string, shocks: T.Shock[]) => call("/scenarios", () => { m.db.scenarios.unshift({ id: "s" + Date.now(), name, shocks, createdAt: m.AS_OF }); return { ok: true }; }, body("POST", { name, shocks })),
+  deleteScenario: (id: string) => call("/scenarios/" + id, () => { m.db.scenarios = m.db.scenarios.filter((x) => x.id !== id); return { ok: true }; }, { method: "DELETE" }),
   macro: () => call<T.MacroIndicator[]>("/macro/overview", m.macro),
   personalInflation: () => call<T.PersonalInflation>("/macro/personal-inflation", m.personalInflation),
   cityPrices: (city: string) => call<T.CityPrice[]>(`/macro/city-prices?city=${encodeURIComponent(city)}`, () => m.cityPrices(city)),
@@ -68,7 +133,12 @@ export const api = {
 };
 
 export const q = {
+  navigator: queryOptions({ queryKey: ["navigator"], queryFn: api.navigator, enabled: typeof window !== "undefined", retry: false }),
+  /** NBK publishes one official rate a day; the server re-reads it hourly, the page re-asks every 10 minutes. */
+  rates: queryOptions({ queryKey: ["rates"], queryFn: api.rates, refetchInterval: 10 * 60 * 1000 }),
+  me: queryOptions({ queryKey: ["me"], queryFn: api.me }),
   accounts: queryOptions({ queryKey: ["accounts"], queryFn: api.accounts }),
+  transactionsFor: (f: T.TxQuery) => queryOptions({ queryKey: ["transactions", f], queryFn: () => api.transactionsFor(f) }),
   categories: queryOptions({ queryKey: ["categories"], queryFn: api.categories, staleTime: Infinity }),
   transactions: queryOptions({ queryKey: ["transactions"], queryFn: api.transactions }),
   rules: queryOptions({ queryKey: ["rules"], queryFn: api.rules }),
@@ -88,4 +158,12 @@ export const q = {
   personalInflation: queryOptions({ queryKey: ["personalInflation"], queryFn: api.personalInflation }),
   cityPrices: (city: string) => queryOptions({ queryKey: ["cityPrices", city], queryFn: () => api.cityPrices(city) }),
   goals: queryOptions({ queryKey: ["goals"], queryFn: api.goals }),
+  transferCandidates: queryOptions({ queryKey: ["transactions", "candidates"], queryFn: api.transferCandidates }),
+  ruleVariables: queryOptions({ queryKey: ["ruleVariables"], queryFn: api.ruleVariables, staleTime: Infinity }),
+  dtiPayments: (month: string) => queryOptions({ queryKey: ["dti", "payments", month], queryFn: () => api.dtiPayments(month) }),
+  insightSettings: queryOptions({ queryKey: ["insightSettings"], queryFn: api.insightSettings }),
+  smartInsights: (surface: "dashboard" | "calendar" | "all" = "dashboard") =>
+    queryOptions({ queryKey: ["smart", surface], queryFn: () => api.smartInsights(surface) }),
+  planned: queryOptions({ queryKey: ["planned"], queryFn: api.planned }),
+  txHistory: (id: string) => queryOptions({ queryKey: ["txHistory", id], queryFn: () => api.txHistory(id) }),
 };

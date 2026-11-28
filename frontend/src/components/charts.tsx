@@ -8,11 +8,11 @@ import { formatDayShort, formatMoneyShort } from "@/lib/format";
 const ReactECharts = lazy(() => import("echarts-for-react"));
 
 /** Chart colors: read the design tokens and convert to rgb through the browser so canvas understands them. */
-export function useChartPalette() {
+export function useChartPalette(scope = ".navigator") {
   const [p, setP] = useState<Record<string, string> | null>(null);
   useEffect(() => {
     const resolve = () => {
-      const el = document.createElement("div"); document.body.appendChild(el);
+      const el = document.createElement("div"); (scope ? document.querySelector(scope) ?? document.body : document.body).appendChild(el);
       const get = (v: string) => { el.style.color = `var(${v})`; return getComputedStyle(el).color; };
       const toRgb = (c: string) => { const cv = document.createElement("canvas"); cv.width = cv.height = 1; const ctx = cv.getContext("2d")!; ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1); const d = ctx.getImageData(0, 0, 1, 1).data; return `rgb(${d[0]},${d[1]},${d[2]})`; };
       const keys = ["--primary", "--accent", "--ok", "--warn", "--risk", "--muted-foreground", "--border", "--foreground", "--card", "--chart-5"];
@@ -22,13 +22,13 @@ export function useChartPalette() {
     resolve();
     const mo = new MutationObserver(resolve); mo.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
     return () => mo.disconnect();
-  }, []);
+  }, [scope]);
   return p;
 }
 export const alpha = (rgb: string, a: number) => rgb.replace("rgb(", "rgba(").replace(")", `,${a})`);
 
-export function Chart({ option, height = 280, label }: { option: (p: Record<string, string>) => object; height?: number; label: string }) {
-  const p = useChartPalette();
+export function Chart({ option, height = 280, label, paletteScope }: { option: (p: Record<string, string>) => object; height?: number; label: string; paletteScope?: string }) {
+  const p = useChartPalette(paletteScope);
   if (!p) return <Skeleton style={{ height }} className="w-full" />;
   return (
     <figure role="img" aria-label={label}>

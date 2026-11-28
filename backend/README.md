@@ -20,6 +20,17 @@ FastAPI-сервис для веб-платформы прогнозирован
 | Alembic | нет, таблицы создаются `create_all` (см. docs/decisions.md) |
 | PostgreSQL | драйвер в зависимостях, не проверялся |
 
+## Профиль, счета и ручные решения пользователя
+- `GET/PATCH /me`: `timezone`, `plannedIncome`, `essentialExpenses`, `workHours`; `null` = «не указано», не ноль. В PATCH меняются только переданные поля, `null` сбрасывает значение.
+- `POST /accounts`, `PATCH /accounts/{id}` (`kind`: current / savings / cash, `confirmed`), `GET/POST /accounts/{id}/checkpoints`: остаток на дату. Импорт выписки создаёт счёт как неподтверждённый и записывает конечный остаток из шапки как checkpoint `statement`.
+- `PATCH /transactions/{id}/kind` (`kind`, `saveRule`): тип операции, заданный пользователем; хранится в `user_kind`, импортированные поля не меняются; при `saveRule` сохраняется правило мерчанта для будущих импортов. Ручной «перевод между своими счетами» исключается из доходов и расходов во всех расчётах.
+- `PATCH /obligations/{id}` и `PATCH /income-sources/{id}` принимают `confirmed` / `rejected`; отклонённые не входят в прогноз. `POST /income-sources` добавляет выплату с диапазоном `amountMin`–`amountMax`.
+- `POST/PATCH/DELETE /transactions`: ручные операции (сумма со знаком, ноль запрещён, дата не в будущем). Для операций из выписки PATCH сохраняет корректировку (`user_amount_minor`, `user_booked_on`, `user_note`) рядом с оригиналом, DELETE запрещён — есть `POST /transactions/{id}/void` и `/restore`. История изменений: `GET /transactions/{id}/history`. В `AccountOut.currentBalance` — остаток на checkpoint плюс ручные операции после него.
+- `PATCH /obligations/{id}`: название, тип, сумма, день, `endsAt`, категория, `debtLeft`.
+- `/planned-payments` (GET/POST/PATCH/DELETE) и `POST /planned-payments/{id}/settle`: плановые разовые/ежегодные статьи, частичная оплата, привязка существующей операции без второго списания; для ежегодной после полной оплаты дата переносится на следующий год.
+- Новые колонки добавляются в существующую БД при старте (`app/core/migrate.py`, только ADD COLUMN), данные не трогаются.
+- `python -m app.dev_user`: тестовый пользователь `navigator-test@example.com` на синтетических выписках.
+
 ## Запуск
 ```bash
 cd backend

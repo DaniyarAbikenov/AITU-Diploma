@@ -1,0 +1,14 @@
+/* Design tokens of the Navigator style: the single source for every screen of the app (Navigator, landing,
+   sign-in, registration, onboarding). Charts read them through useChartPalette(".navigator"). */
+.navigator {
+  --primary: oklch(0.52 0.11 158);
+  --card: oklch(1 0 0);
+  --foreground: oklch(0.27 0.03 161);
+  --muted-foreground: oklch(0.49 0.02 161);
+  --border: oklch(0.92 0.01 160);
+  --accent: oklch(0.75 0.1 160);
+  --ok: oklch(0.52 0.11 158);
+  --warn: oklch(0.65 0.1 70);
+  --risk: oklch(0.52 0.16 30);
+  --chart-5: oklch(0.6 0.1 220);
+}

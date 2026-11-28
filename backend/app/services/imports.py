@@ -2,13 +2,24 @@
 import hashlib
 from collections import Counter, defaultdict
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.catalog import SUBSCRIPTION_HINTS
 from app.engine.categorization import categorize
-from app.models import Account, ImportBatch, IncomeSource, MerchantRule, Obligation, Transaction, User
+from app.models import (
+    Account,
+    AccountCheckpoint,
+    ImportBatch,
+    IncomeSource,
+    MerchantRule,
+    Obligation,
+    Transaction,
+    User,
+)
 from app.parsers.base import ParsedStatement
+from app.services import fx
+from app.services.accounts import guess_kind
 
 
 def user_rules(db: Session, user: User) -> dict[str, str]:
@@ -16,15 +27,92 @@ def user_rules(db: Session, user: User) -> dict[str, str]:
     return {r.merchant: r.category_id for r in rows}
 
 
-def get_or_create_account(db: Session, user: User, parsed: ParsedStatement) -> Account:
-    acc = db.scalar(select(Account).where(Account.user_id == user.id, Account.bank == parsed.bank,
-                                          Account.name == parsed.account_name))
+def match_account(db: Session, user: User, parsed: ParsedStatement) -> tuple[Account | None, str | None]:
+    """The user's account this statement belongs to and how it was found: by the number from the header (reliable),
+    by the header name (no number printed: needs the user's confirmation in the preview), or none."""
+    acc = db.scalar(select(Account).where(Account.user_id == user.id, Account.statement_key == parsed.statement_key))
+    if acc is not None:
+        return acc, "number" if parsed.account_mask else "name"
+    if parsed.account_mask:
+        acc = db.scalar(select(Account).where(Account.user_id == user.id, Account.bank == parsed.bank,
+                                              Account.number_mask == parsed.account_mask))
+        if acc is not None:
+            return acc, "number"
+    name_key = f"{parsed.bank}|name:{parsed.account_name}"
+    acc = db.scalar(select(Account).where(Account.user_id == user.id, Account.bank == parsed.bank, or_(
+        Account.statement_key == name_key,
+        and_(Account.statement_key.is_(None), Account.name == parsed.account_name))))
+    return (acc, "name") if acc is not None else (None, None)
+
+
+def get_or_create_account(db: Session, user: User, parsed: ParsedStatement, target: str = "auto") -> Account:
+    """target: "auto" (match by number, then by name), "new" (always a new account) or an account id the user chose.
+    The chosen or found account remembers the statement key, so renaming it later does not break the link."""
+    acc = None
+    if target not in ("auto", "new"):
+        acc = db.get(Account, int(target)) if str(target).isdigit() else None
+        if acc is None or acc.user_id != user.id:
+            raise LookupError("Счёт не найден")
+    elif target == "auto":
+        acc, _ = match_account(db, user, parsed)
     if acc is None:
-        acc = Account(user_id=user.id, bank=parsed.bank, name=parsed.account_name, currency="KZT",
-                      balance_minor=parsed.closing_balance_minor or 0)
+        acc = Account(user_id=user.id, bank=parsed.bank, name=parsed.account_name, currency=statement_currency(parsed),
+                      balance_minor=parsed.closing_balance_minor or 0, kind=guess_kind(parsed.account_name),
+                      confirmed=False)
         db.add(acc)
         db.flush()
+    elif parsed.closing_balance_minor is not None and not _older_than_known(db, acc, parsed):
+        acc.balance_minor = parsed.closing_balance_minor  # the newest statement carries the current balance
+    # a number from the header upgrades a name-based key; a key never changes when the account is renamed
+    if acc.statement_key is None or (parsed.account_mask and acc.number_mask is None):
+        acc.statement_key = parsed.statement_key
+    if parsed.account_mask and acc.number_mask is None:
+        acc.number_mask = parsed.account_mask
     return acc
+
+
+def backfill_statement_keys(db: Session) -> int:
+    """Accounts created by imports before statement keys existed get a key from their current bank and name.
+    Only the key is written; operations, balances and names stay as they are."""
+    rows = db.scalars(select(Account).where(Account.statement_key.is_(None))).all()
+    n = 0
+    for a in rows:
+        if db.scalar(select(ImportBatch.id).where(ImportBatch.user_id == a.user_id, ImportBatch.bank == a.bank).limit(1)):
+            a.statement_key = f"{a.bank}|name:{a.name}"
+            n += 1
+    db.commit()
+    return n
+
+
+def statement_currency(parsed: ParsedStatement) -> str:
+    """The account currency is the currency of most operations of the statement (KZT for an empty one)."""
+    counts = Counter(r.currency for r in parsed.rows)
+    top = counts.most_common(1)[0][0] if counts else "KZT"
+    return top if top in fx.SUPPORTED else "KZT"
+
+
+def record_statement_checkpoint(db: Session, acc: Account, parsed: ParsedStatement) -> None:
+    """The closing balance from the statement header becomes a dated checkpoint (FR-12), once per statement."""
+    end = parsed.period_to or max((r.booked_on for r in parsed.rows), default=None)
+    if parsed.closing_balance_minor is None or end is None:
+        return
+    exists = db.scalar(select(AccountCheckpoint.id).where(
+        AccountCheckpoint.account_id == acc.id, AccountCheckpoint.as_of == end, AccountCheckpoint.source == "statement",
+        AccountCheckpoint.balance_minor == parsed.closing_balance_minor))
+    if not exists:
+        db.add(AccountCheckpoint(user_id=acc.user_id, account_id=acc.id, balance_minor=parsed.closing_balance_minor,
+                                 as_of=end, source="statement"))
+
+
+def user_kind_rules(db: Session, user: User) -> dict[str, str]:
+    rows = db.scalars(select(MerchantRule).where(MerchantRule.user_id == user.id, MerchantRule.kind.is_not(None))).all()
+    return {r.merchant: r.kind for r in rows}
+
+
+def _older_than_known(db: Session, acc: Account, parsed: ParsedStatement) -> bool:
+    end = parsed.period_to or max((r.booked_on for r in parsed.rows), default=None)
+    last = db.scalar(select(func.max(Transaction.booked_on)).where(Transaction.account_id == acc.id))
+    return end is not None and last is not None and end < last
 
 
 def dedup_key(user_id: int, account_id: int, row, seq: int) -> str:
@@ -32,13 +120,15 @@ def dedup_key(user_id: int, account_id: int, row, seq: int) -> str:
     return hashlib.sha1(raw.encode()).hexdigest()
 
 
-def import_statement(db: Session, user: User, parsed: ParsedStatement, source: str = "synthetic") -> ImportBatch:
+def import_statement(db: Session, user: User, parsed: ParsedStatement, source: str = "synthetic",
+                     target: str = "auto") -> ImportBatch:
     """Idempotent: re-importing the same statement adds no rows (dedup on date, amount, merchant, occurrence #)."""
-    acc = get_or_create_account(db, user, parsed)
-    batch = ImportBatch(user_id=user.id, bank=parsed.bank, source=source, status="done")
+    acc = get_or_create_account(db, user, parsed, target)
+    batch = ImportBatch(user_id=user.id, bank=parsed.bank, source=source, status="done", account_id=acc.id)
     db.add(batch)
     db.flush()
     rules = user_rules(db, user)
+    kind_rules = user_kind_rules(db, user)
     seen: Counter = Counter()
     added = review = 0
     dates = []
@@ -54,12 +144,15 @@ def import_statement(db: Session, user: User, parsed: ParsedStatement, source: s
         db.add(Transaction(user_id=user.id, account_id=acc.id, batch_id=batch.id, booked_on=row.booked_on,
                            amount_minor=row.amount_minor, currency=row.currency, merchant=row.merchant,
                            category_id=cat.category_id, category_source=cat.source, needs_review=cat.needs_review,
-                           internal=row.internal, dedup_key=key))
+                           internal=row.internal, user_kind=kind_rules.get(row.merchant), dedup_key=key))
         added += 1
         review += cat.needs_review
     batch.parsed, batch.needs_review = added, review
-    if dates:
+    if parsed.period_from and parsed.period_to:
+        batch.period_from, batch.period_to = parsed.period_from, parsed.period_to
+    elif dates:
         batch.period_from, batch.period_to = min(dates), max(dates)
+    record_statement_checkpoint(db, acc, parsed)
     db.flush()
     mark_internal_transfers(db, user)
     detect_recurring(db, user)
@@ -67,25 +160,37 @@ def import_statement(db: Session, user: User, parsed: ParsedStatement, source: s
     return batch
 
 
-def mark_internal_transfers(db: Session, user: User) -> int:
-    """A transfer out of one own account matched by an equal transfer in on another within +-1 day is internal:
-    it moves money between the user's accounts and is excluded from income and expense."""
-    txs = db.scalars(select(Transaction).where(Transaction.user_id == user.id, Transaction.category_id == "transfers",
-                                               Transaction.internal.is_(False))).all()
+def transfer_candidates(db: Session, user: User) -> list[tuple[Transaction, list[Transaction]]]:
+    """For every outgoing operation not yet a transfer: incoming operations on another own account with the same
+    amount and currency within +-1 day."""
+    txs = db.scalars(select(Transaction).where(Transaction.user_id == user.id, Transaction.internal.is_(False),
+                                               Transaction.user_kind.is_(None), Transaction.voided.is_(False),
+                                               Transaction.category_id == "transfers")).all()
     outs = [t for t in txs if t.amount_minor < 0]
     ins = [t for t in txs if t.amount_minor > 0]
-    used: set[int] = set()
-    marked = 0
+    out = []
     for o in outs:
-        for i in ins:
-            if i.id in used or i.account_id == o.account_id or i.amount_minor != -o.amount_minor:
-                continue
-            if abs((i.booked_on - o.booked_on).days) <= 1:
-                o.internal = i.internal = True
-                o.needs_review = i.needs_review = False
-                used.add(i.id)
-                marked += 2
-                break
+        match = [i for i in ins if i.account_id != o.account_id and i.amount_minor == -o.amount_minor
+                 and i.currency == o.currency and abs((i.booked_on - o.booked_on).days) <= 1]
+        if match:
+            out.append((o, match))
+    return out
+
+
+def mark_internal_transfers(db: Session, user: User) -> int:
+    """Link a pair automatically only when it is unambiguous: the outgoing operation has exactly one incoming twin
+    and that twin matches no other outgoing operation. Ambiguous pairs wait for the user (GET /transfers/candidates)."""
+    pairs = transfer_candidates(db, user)
+    twins_of: Counter = Counter(i.id for _, ins in pairs for i in ins)
+    marked = 0
+    for o, ins in pairs:
+        if len(ins) == 1 and twins_of[ins[0].id] == 1:
+            i = ins[0]
+            group = f"auto-{o.id}-{i.id}"
+            o.internal = i.internal = True
+            o.needs_review = i.needs_review = False
+            o.transfer_group = i.transfer_group = group
+            marked += 2
     return marked
 
 

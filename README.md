@@ -34,7 +34,7 @@
 Бэкенд: Python 3.13, FastAPI, SQLAlchemy 2, SQLite (PostgreSQL через `DATABASE_URL`), numpy, pytest. Фронтенд: React, TypeScript, TanStack, ECharts (папка `frontend/`).
 
 ## Ссылки
-- YouTrack: https://abikenov-diploma.youtrack.cloud/
+- YouTrack: https://abikenov-diploma.youtrack.cloud/projects/DP
 - Документы: [docs/](docs)
 - Исходный репозиторий фронтенд-прототипа (перенесён в `frontend/`): https://github.com/DaniyarAbikenov/diploma-demo-frontend
 
@@ -46,6 +46,10 @@ uvicorn app.main:app --reload   # http://localhost:8000/docs, демо: demo@zap
 pytest -q
 ```
 Фронтенд подключается к бэкенду переменными `VITE_API_MODE=real` и `VITE_API_URL=http://localhost:8000/api/v1`, подробности в [frontend/README.md](frontend/README.md).
+
+## Financial Life Navigator
+
+Единственный интерфейс приложения — `frontend/`, маршрут `/navigator`: режимы «Мои данные» (сервер) и «Демо». Обзор, цели и переводы, операции, календарь, сценарии, задания с XP и профиль работают на общей локальной модели. Регистрация и бэкенд не требуются. [Запуск, демонстрационные сценарии и ограничения](frontend/NAVIGATOR.md).
 
 ## Запуск в Docker
 ```bash

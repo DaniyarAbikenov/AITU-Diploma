@@ -52,8 +52,9 @@ SNAPSHOT_HISTORY = [70, 71, 69, 66, 64, 65, 61, 58, 60, 59, 61, 62]
 
 
 def ensure_reference_data(db: Session) -> None:
-    if db.scalar(select(Category.id).limit(1)) is None:
-        for cid, name, color, cpi, fx in CATEGORIES:
+    known = set(db.scalars(select(Category.id)))
+    for cid, name, color, cpi, fx in CATEGORIES:  # added one by one so new categories reach existing databases
+        if cid not in known:
             db.add(Category(id=cid, name=name, color=color, cpi_group=cpi, fx_sensitivity=fx))
     if db.scalar(select(MacroSeries.id).limit(1)) is None:
         first = add_months(as_of().replace(day=1), -11)

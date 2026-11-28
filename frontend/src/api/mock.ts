@@ -2,7 +2,7 @@
 import type {
   Account, BalancePoint, Category, CityPrice, DashboardSummary, DtiPoint, Goal, GoalProjection, ImportReport, IncomeSource,
   Insight, MacroIndicator, MerchantRule, MonthEndForecast, BalanceForecast, Obligation, ObligationsCalendar, PersonalInflation,
-  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction,
+  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction, User, AccountIn, TxKind, TxQuery, Decision, ImportPreview, SmartCard, InsightSettings, RuleIn, RuleInfo, RulePreview, Rates, TransactionIn, TransferIn, TransactionPatch, PlannedPayment, PlannedIn, PlannedPatch, SettleIn,
 } from "./types";
 
 export const AS_OF = "2026-10-19";
@@ -87,7 +87,59 @@ export const db = {
   ] as Goal[],
   scenarios: [] as SavedScenario[],
   dismissed: new Set<string>(),
+  planned: [] as PlannedPayment[],
+  dti: null as DtiPoint[] | null,
+  smart: [] as SmartCard[],
+  me: { id: "u1", email: "mock@example.com", name: "Айгерим", city: "Алматы", currency: "KZT", timezone: "Asia/Almaty", plannedIncome: null, essentialExpenses: null, workHours: null } as User,
 };
+
+export const rates: Rates = {
+  base: "KZT",
+  source: "Национальный банк РК, официальный курс (nationalbank.kz)",
+  rates: [
+    { currency: "USD", rate: 452.59, rateDate: AS_OF, fetchedAt: null, source: "demo-seed", stale: true },
+    { currency: "EUR", rate: 492.1, rateDate: AS_OF, fetchedAt: null, source: "demo-seed", stale: true },
+    { currency: "RUB", rate: 5.61, rateDate: AS_OF, fetchedAt: null, source: "demo-seed", stale: true },
+  ],
+};
+
+export function createAccount(a: AccountIn): Account {
+  const acc: Account = { id: "acc-" + Date.now(), bank: a.bank, name: a.name, kind: a.kind, currency: a.currency ?? "KZT", balance: a.balance ?? 0,
+    confirmed: true, balanceKnown: a.balance != null, balanceAsOf: a.balance != null ? a.balanceAsOf ?? AS_OF : null, balanceSource: a.balance != null ? "manual" : null };
+  const r = acc.currency === "KZT" ? 1 : rates.rates.find((x) => x.currency === acc.currency)?.rate;
+  if (r && acc.currency !== "KZT") Object.assign(acc, { rate: r, rateDate: AS_OF, rateStale: true });
+  if (r && a.balance != null) Object.assign(acc, { balanceKzt: Math.round(a.balance * r), currentBalanceKzt: Math.round(a.balance * r) });
+  accounts.push(acc);
+  return acc;
+}
+export function addCheckpoint(id: string, cp: { balance: number; asOf: string; source?: "manual" | "statement" }): Account {
+  const acc = accounts.find((a) => a.id === id)!;
+  return Object.assign(acc, { balance: cp.balance, balanceKnown: true, balanceAsOf: cp.asOf, balanceSource: cp.source ?? "manual", confirmed: true });
+}
+const autoKind = (t: Transaction): TxKind => (t.internal ? "transfer_own" : t.amount > 0 ? "income" : "expense");
+export function filterTransactions(f: TxQuery): Transaction[] {
+  const bankOf = (id: string) => accounts.find((a) => a.id === id)?.bank;
+  return db.transactions
+    .filter((t) => (!f.from || t.date >= f.from) && (!f.to || t.date <= f.to) && (!f.account || t.accountId === f.account)
+      && (!f.bank || bankOf(t.accountId) === f.bank) && (!f.q || t.merchant.toLowerCase().includes(f.q.toLowerCase())))
+    .map((t) => ({ ...t, kind: t.kind ?? autoKind(t), kindSource: t.kindSource ?? "auto" }));
+}
+export function setTxKind(id: string, kind: TxKind | null, saveRule: boolean): Transaction {
+  const t = db.transactions.find((x) => x.id === id)!;
+  const targets = saveRule ? db.transactions.filter((x) => x.merchant === t.merchant) : [t];
+  for (const x of targets) Object.assign(x, kind ? { kind, kindSource: "user" } : { kind: autoKind({ ...x, kind: undefined }), kindSource: "auto" });
+  return t;
+}
+export function decide<R extends { id: string; confirmed: boolean; rejected?: boolean }>(rows: R[], id: string, d: Decision): R {
+  const r = rows.find((x) => x.id === id)!;
+  if (d.rejected) Object.assign(r, { rejected: true, confirmed: false });
+  else if (d.confirmed) Object.assign(r, { confirmed: true, rejected: false });
+  else {
+    if (d.confirmed === false) r.confirmed = false;
+    if (d.rejected === false) r.rejected = false;
+  }
+  return r;
+}
 
 export function monthKey(isoDate: string) { return isoDate.slice(0, 7); }
 
@@ -160,6 +212,7 @@ export function calendar(): ObligationsCalendar {
   return { months, income: 800_000 };
 }
 export function dtiHistory(): DtiPoint[] {
+  if (db.dti) return db.dti;
   const vals = [0.12, 0.13, 0.13, 0.19, 0.2, 0.21, 0.25, 0.26, 0.24, 0.25, 0.27, 0.268];
   return vals.map((dti, i) => ({ month: iso(new Date(Date.UTC(2025, 10 + i, 1))).slice(0, 7), dti }));
 }
@@ -259,4 +312,100 @@ export function goalProjection(g: Goal): GoalProjection {
 
 export function fakeImport(bank: string): ImportReport {
   return { id: "imp-" + Date.now(), status: "done", parsed: db.transactions.length, needsReview: db.transactions.filter((t) => t.needsReview).length, period: { from: addDays(AS_OF, -110), to: AS_OF }, bank };
+}
+
+export function createTx(t: TransactionIn): Transaction {
+  const tx: Transaction = { id: "m" + Date.now(), date: t.date, amount: t.amount, currency: "KZT", merchant: t.merchant, categoryId: t.category ?? "other",
+    accountId: t.accountId, needsReview: false, kind: t.kind ?? (t.amount > 0 ? "income" : "expense"), kindSource: "user", source: "manual", note: t.note ?? null };
+  db.transactions.unshift(tx);
+  return tx;
+}
+export function updateTx(id: string, p: TransactionPatch): Transaction {
+  const t = db.transactions.find((x) => x.id === id)!;
+  const { category, ...rest } = p;
+  return Object.assign(t, rest, category ? { categoryId: category } : {});
+}
+const plannedStatus = (p: PlannedPayment): PlannedPayment => {
+  p.left = Math.max(0, p.amount - p.paid);
+  if (p.status !== "cancelled") p.status = p.left === 0 ? "paid" : p.paid > 0 ? "partial" : "planned";
+  return p;
+};
+export function addPlanned(i: PlannedIn): PlannedPayment {
+  const p: PlannedPayment = { ...i, categoryId: i.category ?? null, id: "p" + Date.now(), status: "planned", paid: 0, left: i.amount, settlements: [] };
+  db.planned.push(p);
+  return p;
+}
+export function updatePlanned(id: string, patch: PlannedPatch): PlannedPayment {
+  const p = db.planned.find((x) => x.id === id)!;
+  const { cancelled, category, ...rest } = patch;
+  Object.assign(p, rest, category !== undefined ? { categoryId: category } : {});
+  if (cancelled !== undefined) p.status = cancelled ? "cancelled" : "planned";
+  return plannedStatus(p);
+}
+export function settlePlanned(id: string, s: SettleIn): PlannedPayment {
+  const p = db.planned.find((x) => x.id === id)!;
+  const amount = s.amount ?? p.left;
+  p.paid += amount;
+  p.settlements.push({ transactionId: s.transactionId ?? "m" + Date.now(), amount, period: p.dueOn });
+  return plannedStatus(p);
+}
+
+export function createTransfer(tr: TransferIn): Transaction[] {
+  const group = "tr-" + tr.requestId;
+  const done = db.transactions.filter((t) => t.transferGroup === group);
+  if (done.length) return done;
+  const legs: Transaction[] = [
+    { id: "m" + Date.now(), date: tr.date, amount: -tr.amount, currency: "KZT", merchant: "Перевод", categoryId: "transfers", accountId: tr.fromAccountId, needsReview: false, internal: true, kind: "transfer_own", kindSource: "user", source: "manual", transferGroup: group },
+    { id: "m" + (Date.now() + 1), date: tr.date, amount: tr.toAmount ?? tr.amount, currency: "KZT", merchant: "Перевод", categoryId: "transfers", accountId: tr.toAccountId, needsReview: false, internal: true, kind: "transfer_own", kindSource: "user", source: "manual", transferGroup: group },
+  ];
+  db.transactions.unshift(...legs);
+  return legs;
+}
+
+export function fakePreview(bank: string): ImportPreview {
+  return { bank, accountName: "Kaspi Gold", numberMask: null, currency: "KZT", periodFrom: "2026-09-01", periodTo: "2026-09-30", operations: 42,
+    closingBalance: 120000, suggestedAccountId: accounts[0]?.id ?? null, matchedBy: "name", needsChoice: true,
+    accounts: accounts.map((a) => ({ id: a.id, bank: a.bank, name: a.name, currency: a.currency, numberMask: a.numberMask ?? null })) };
+}
+
+export const ruleVariables = [
+  { name: "days_in_month", description: "дней в месяце (28–31)" },
+  { name: "income_min", description: "осторожный доход" },
+];
+/** Mock evaluation of the two common rules (the real parser is on the server). */
+export function rulePreview(r: RuleIn): RulePreview {
+  const days = 30;
+  if (r.kind === "per_day") { const a = Number(r.params.perDay) * days; return { amount: a, explanation: `${r.params.perDay} ₸ × ${days} дн. = ${a} ₸`, estimate: false }; }
+  if (r.kind === "percent_income") return { amount: null, explanation: "не рассчитано: нужен подтверждённый доход", missing: "income_min", estimate: true };
+  if (r.kind === "formula" && /[^\w\s+\-*/().,;×÷]/.test(r.expression ?? "")) return { error: "недопустимый символ", errorPos: 0 };
+  return { amount: 0, explanation: r.expression ?? "", estimate: false };
+}
+export function setRule(type: string, id: string, r: RuleIn): RuleInfo {
+  const p = rulePreview(r);
+  const info: RuleInfo = { kind: r.kind, params: r.params, expression: r.expression ?? "", validFrom: AS_OF.slice(0, 7), amountThisMonth: p.amount ?? null,
+    explanation: p.explanation ?? "", estimate: !!p.estimate, missing: p.missing ?? null, amountsByMonth: { [AS_OF.slice(0, 7)]: p.amount ?? null } };
+  const row = type === "obligation" ? db.obligations.find((o) => o.id === id) : db.planned.find((x) => x.id === id);
+  if (row) row.rule = info;
+  return info;
+}
+export function deleteAmountRule(type: string, id: string) {
+  const row = type === "obligation" ? db.obligations.find((o) => o.id === id) : db.planned.find((x) => x.id === id);
+  if (row) row.rule = null;
+  return { ok: true };
+}
+
+export const insightSettings: InsightSettings = {
+  thresholds: [{ key: "materialityMinor", label: "Минимальная заметная сумма, ₸", unit: "money", value: 5000, default: 5000, isDefault: true }],
+  sensitive: [{ id: "K070", title: "Стоимость покупки в рабочих часах", enabled: false }],
+};
+export function patchInsightSettings(p: { thresholds?: Record<string, number | null>; sensitive?: Record<string, boolean> }): InsightSettings {
+  for (const [k, v] of Object.entries(p.thresholds ?? {})) {
+    const t = insightSettings.thresholds.find((x) => x.key === k);
+    if (t) Object.assign(t, v == null ? { value: t.default, isDefault: true } : { value: v, isDefault: false });
+  }
+  for (const [k, v] of Object.entries(p.sensitive ?? {})) {
+    const x = insightSettings.sensitive.find((y) => y.id === k);
+    if (x) x.enabled = v;
+  }
+  return insightSettings;
 }
