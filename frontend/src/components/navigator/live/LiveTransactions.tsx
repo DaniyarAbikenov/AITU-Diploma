@@ -16,7 +16,7 @@ import { money, moneyIn } from "../model";
 import { Panel } from "../shared";
 import { TxDialog } from "./forms";
 import { ImportPanel } from "./ImportPanel";
-import { CompareMonths, ReviewPanel, RulesPanel } from "./LiveDataTools";
+import { CompareMonths, ReviewPanel, RulesPanel, TransferPairsPanel } from "./LiveDataTools";
 import type { LiveProps } from "./types";
 
 const t = ru.live.transactions;
@@ -210,9 +210,11 @@ export function LiveTransactions({ accounts, today, notify }: LiveProps) {
         )}
       </Panel>
       <CompareMonths month={month} />
+      <TransferPairsPanel notify={notify} />
       <ReviewPanel notify={notify} />
       <RulesPanel notify={notify} />
       <TxDialog
+        key={picked?.id ?? "none"}
         tx={picked}
         open={!!picked}
         accounts={accounts}

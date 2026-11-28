@@ -34,7 +34,7 @@ export const api = {
   updateMe: (patch: T.ProfilePatch) => call<T.User>("/me", () => Object.assign(m.db.me, patch), body("PATCH", patch)),
   accounts: () => call<T.Account[]>("/accounts", () => m.accounts),
   createAccount: (a: T.AccountIn) => call<T.Account>("/accounts", () => m.createAccount(a), body("POST", a)),
-  updateAccount: (id: string, patch: Partial<Pick<T.Account, "bank" | "name" | "kind" | "confirmed" | "currency">>) =>
+  updateAccount: (id: string, patch: Partial<Pick<T.Account, "bank" | "name" | "kind" | "confirmed" | "currency">> & T.Availability) =>
     call<T.Account>("/accounts/" + id, () => Object.assign(m.accounts.find((a) => a.id === id)!, patch), body("PATCH", patch)),
   addCheckpoint: (id: string, cp: { balance: number; asOf: string; source?: "manual" | "statement" }) =>
     call<T.Account>(`/accounts/${id}/checkpoints`, () => m.addCheckpoint(id, cp), body("POST", cp)),
@@ -52,6 +52,9 @@ export const api = {
   deleteTx: (id: string) => call("/transactions/" + id, () => { m.db.transactions = m.db.transactions.filter((x) => x.id !== id); return { ok: true }; }, { method: "DELETE" }),
   voidTx: (id: string, voided: boolean) => call<T.Transaction>(`/transactions/${id}/${voided ? "void" : "restore"}`, () => Object.assign(m.db.transactions.find((x) => x.id === id)!, { voided }), { method: "POST" }),
   txHistory: (id: string) => call<T.TransactionEdit[]>(`/transactions/${id}/history`, () => []),
+  createTransfer: (tr: T.TransferIn) => call<T.Transaction[]>("/transfers", () => m.createTransfer(tr), body("POST", tr)),
+  transferCandidates: () => call<T.TransferCandidate[]>("/transfers/candidates", () => []),
+  linkTransfer: (outId: string, inId: string) => call<T.Transaction[]>("/transfers/link", () => [], body("POST", { outId, inId })),
   setTxKind: (id: string, kind: T.TxKind | null, saveRule = false) =>
     call<T.Transaction>(`/transactions/${id}/kind`, () => m.setTxKind(id, kind, saveRule), body("PATCH", { kind, saveRule })),
   categories: () => call<T.Category[]>("/categories", () => m.categories),
@@ -136,6 +139,7 @@ export const q = {
   personalInflation: queryOptions({ queryKey: ["personalInflation"], queryFn: api.personalInflation }),
   cityPrices: (city: string) => queryOptions({ queryKey: ["cityPrices", city], queryFn: () => api.cityPrices(city) }),
   goals: queryOptions({ queryKey: ["goals"], queryFn: api.goals }),
+  transferCandidates: queryOptions({ queryKey: ["transactions", "candidates"], queryFn: api.transferCandidates }),
   planned: queryOptions({ queryKey: ["planned"], queryFn: api.planned }),
   txHistory: (id: string) => queryOptions({ queryKey: ["txHistory", id], queryFn: () => api.txHistory(id) }),
 };

@@ -145,6 +145,7 @@ export function LiveNavigator({
       )}
       {tab === "profile" && <LiveProfile {...props} />}
       <TxDialog
+        key={txOpen ? "tx-open" : "tx-closed"}
         tx={null}
         open={txOpen}
         accounts={accounts}

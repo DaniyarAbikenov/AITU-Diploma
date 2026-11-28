@@ -2,7 +2,13 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Activity, Plus } from "lucide-react";
 import { api } from "@/api/client";
-import type { Account, AccountCurrency, AccountKind, ProfilePatch } from "@/api/types";
+import type {
+  Account,
+  AccountCurrency,
+  AccountKind,
+  Availability,
+  ProfilePatch,
+} from "@/api/types";
 import { updateSession } from "@/lib/auth";
 import { bankName, ru } from "@/i18n/ru";
 import { cautiousIncome, formatDay } from "@/lib/navigator-live";
@@ -156,6 +162,14 @@ export function LiveProfile({ me, accounts, incomes, obligations, today, notify 
           <Missing>{t.noAccounts}</Missing>
         )}
         <NewAccount today={today} notify={notify} />
+        <details className="nav-small">
+          <summary>{ru.dep.howTitle}</summary>
+          <ol>
+            {ru.dep.howSteps.map((x) => (
+              <li key={x}>{x}</li>
+            ))}
+          </ol>
+        </details>
       </Panel>
       <ObligationsPanel obligations={obligations} notify={notify} />
       <PrivacyPanel email={me.email} />
@@ -173,7 +187,8 @@ function AccountRow({
   notify: (m: string) => void;
 }) {
   const qc = useQueryClient();
-  const [editBalance, setEditBalance] = useState(false);
+  const [editBalance, setEditBalance] = useState(false),
+    [editAvail, setEditAvail] = useState(false);
   const done = () => {
     qc.invalidateQueries({ queryKey: ["accounts"] });
     qc.invalidateQueries({ queryKey: ["resilience"] });
@@ -181,7 +196,7 @@ function AccountRow({
     notify(t.saved);
   };
   const patch = useMutation({
-    mutationFn: (p: Partial<Pick<Account, "kind" | "confirmed" | "currency">>) =>
+    mutationFn: (p: Partial<Pick<Account, "kind" | "confirmed" | "currency">> & Availability) =>
       api.updateAccount(a.id, p),
     onSuccess: done,
   });
@@ -210,6 +225,16 @@ function AccountRow({
               }`}
         </p>
         <KztHint a={a} />
+        {(a.frozenAmount ?? 0) > 0 && a.frozenUntil && (
+          <p className="nav-small">
+            {ru.dep.rowFrozen(moneyIn(a.frozenAmount!, a.currency), formatDay(a.frozenUntil))} ·{" "}
+            {ru.dep.rowAvailable(moneyIn(a.availableBalance ?? 0, a.currency))}
+            {a.interestRate != null ? ` · ${a.interestRate}% годовых` : ""}
+            {a.earlyWithdrawal
+              ? ` · досрочно: ${ru.dep.earlyOptions[a.earlyWithdrawal].toLowerCase()}`
+              : ""}
+          </p>
+        )}
         {a.revaluationKzt != null && a.revaluationKzt !== 0 && (
           <p className="nav-small">{ru.fx.revaluation(money(a.revaluationKzt))}</p>
         )}
@@ -257,7 +282,47 @@ function AccountRow({
         <button className="nav-secondary" onClick={() => setEditBalance(!editBalance)}>
           {t.setBalance}
         </button>
+        <button
+          className="nav-text-button"
+          onClick={() => setEditAvail(!editAvail)}
+          aria-expanded={editAvail}
+        >
+          {ru.dep.availability}
+        </button>
       </div>
+      {editAvail && (
+        <form
+          className="nav-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            patch.mutate(availabilityFrom(new FormData(e.currentTarget)), {
+              onSuccess: () => setEditAvail(false),
+            });
+          }}
+        >
+          <AvailabilityFields a={a} />
+          <div className="nav-actions">
+            <button className="nav-primary" disabled={patch.isPending}>
+              {ru.common.save}
+            </button>
+            {a.frozenUntil && (
+              <button
+                type="button"
+                className="nav-secondary"
+                disabled={patch.isPending}
+                onClick={() =>
+                  patch.mutate(
+                    { frozenUntil: null, frozenAmount: null },
+                    { onSuccess: () => setEditAvail(false) },
+                  )
+                }
+              >
+                {ru.dep.unfreeze}
+              </button>
+            )}
+          </div>
+        </form>
+      )}
       {editBalance && (
         <form
           className="nav-form"
@@ -295,6 +360,64 @@ function AccountRow({
   );
 }
 
+/** Empty fields = not frozen / unknown; an empty blocked amount with a date = the whole balance is frozen. */
+function availabilityFrom(f: FormData): Availability {
+  const until = String(f.get("frozenUntil") ?? "").trim();
+  return {
+    frozenUntil: until || null,
+    frozenAmount: until ? opt(f.get("frozenAmount")) : null,
+    interestRate: opt(f.get("interestRate")),
+    earlyWithdrawal: (String(f.get("earlyWithdrawal") ?? "") ||
+      null) as Availability["earlyWithdrawal"],
+  };
+}
+
+function AvailabilityFields({ a }: { a?: Account }) {
+  return (
+    <>
+      <label className="nav-field">
+        {ru.dep.frozenUntilField}
+        <input name="frozenUntil" type="date" defaultValue={a?.frozenUntil ?? ""} />
+      </label>
+      <label className="nav-field">
+        {ru.dep.frozenAmountField}
+        <input
+          name="frozenAmount"
+          type="number"
+          min={0}
+          step={0.01}
+          defaultValue={
+            a?.frozenUntil && a.frozenAmount != null && a.frozenAmount !== a.currentBalance
+              ? a.frozenAmount
+              : ""
+          }
+        />
+      </label>
+      <label className="nav-field">
+        {ru.dep.rate}
+        <input
+          name="interestRate"
+          type="number"
+          min={0}
+          max={100}
+          step={0.01}
+          defaultValue={a?.interestRate ?? ""}
+        />
+      </label>
+      <label className="nav-field">
+        {ru.dep.earlyField}
+        <select name="earlyWithdrawal" defaultValue={a?.earlyWithdrawal ?? ""}>
+          {Object.entries(ru.dep.earlyOptions).map(([k, v]) => (
+            <option key={k} value={k}>
+              {v}
+            </option>
+          ))}
+        </select>
+      </label>
+    </>
+  );
+}
+
 function NewAccount({ today, notify }: { today: string; notify: (m: string) => void }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -325,6 +448,7 @@ function NewAccount({ today, notify }: { today: string; notify: (m: string) => v
           currency: String(f.get("currency")) as AccountCurrency,
           balance: opt(f.get("balance")),
           balanceAsOf: String(f.get("asOf") || today),
+          ...availabilityFrom(f),
         });
       }}
     >
@@ -369,6 +493,10 @@ function NewAccount({ today, notify }: { today: string; notify: (m: string) => v
         {t.balanceDate}
         <input name="asOf" type="date" max={today} defaultValue={today} />
       </label>
+      <details>
+        <summary>{ru.dep.availability}</summary>
+        <AvailabilityFields />
+      </details>
       <div className="nav-actions">
         <button className="nav-primary" disabled={create.isPending}>
           {ru.common.save}

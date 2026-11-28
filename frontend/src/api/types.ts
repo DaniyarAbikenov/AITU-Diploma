@@ -9,7 +9,7 @@ export interface User {
   timezone?: string; plannedIncome?: number | null; essentialExpenses?: number | null; workHours?: number | null;
 }
 export type ProfilePatch = Partial<Pick<User, "name" | "city" | "timezone" | "plannedIncome" | "essentialExpenses" | "workHours">>;
-export type AccountKind = "current" | "savings" | "cash";
+export type AccountKind = "current" | "savings" | "deposit" | "cash";
 export type AccountCurrency = "KZT" | "USD" | "EUR" | "RUB";
 export interface Rate { currency: string; rate: number; rateDate: string; fetchedAt?: string | null; source: string; stale: boolean }
 export interface Rates { base: "KZT"; source: string; rates: Rate[] }
@@ -18,15 +18,22 @@ export interface Account {
   id: string; bank: string; name: string; currency: AccountCurrency; balance: number;
   rate?: number | null; rateDate?: string | null; rateStale?: boolean;
   balanceKzt?: number | null; currentBalanceKzt?: number | null; revaluationKzt?: number | null;
+  /** Frozen money (deposit until a date): in capital, not in the liquid pool, Safe-to-Spend or reserve days. */
+  frozenUntil?: string | null; frozenAmount?: number | null; availableBalance?: number | null;
+  frozenKzt?: number | null; availableKzt?: number | null;
+  interestRate?: number | null; earlyWithdrawal?: "yes" | "no" | "lose_interest" | null;
   kind?: AccountKind | null; confirmed?: boolean;
   /** false: no checkpoint or statement balance, `balance` is a placeholder and must not be shown as 0. */
   balanceKnown?: boolean; balanceAsOf?: string | null; balanceSource?: "manual" | "statement" | null;
   /** Checkpoint plus manual operations after it; null when the balance is unknown. */
   currentBalance?: number | null;
 }
-export interface AccountIn { bank: string; name: string; kind: AccountKind; currency?: AccountCurrency; balance?: number | null; balanceAsOf?: string | null }
+export type Availability = Partial<Pick<Account, "frozenUntil" | "interestRate" | "earlyWithdrawal">> & { frozenAmount?: number | null };
+export interface AccountIn extends Availability { bank: string; name: string; kind: AccountKind; currency?: AccountCurrency; balance?: number | null; balanceAsOf?: string | null }
+export interface TransferIn { fromAccountId: string; toAccountId: string; amount: number; toAmount?: number | null; date: string; note?: string | null; requestId: string }
+export interface TransferCandidate { outId: string; inIds: string[] }
 export interface Checkpoint { id: string; accountId: string; balance: number; asOf: string; source: "manual" | "statement" }
-export type TxKind = "expense" | "income" | "income_salary" | "income_other" | "transfer_own" | "transfer_third_party";
+export type TxKind = "expense" | "income" | "income_salary" | "income_other" | "income_interest" | "transfer_own" | "transfer_third_party";
 
 export interface Category { id: string; name: string; color: string }
 export interface Transaction {
@@ -34,7 +41,7 @@ export interface Transaction {
   merchant: string; categoryId: string; accountId: string; needsReview: boolean; internal?: boolean;
   /** Effective type: the user's decision when kindSource = "user", otherwise derived from the import. */
   kind?: TxKind; kindSource?: "user" | "auto";
-  source?: "import" | "manual"; note?: string | null; voided?: boolean;
+  source?: "import" | "manual"; note?: string | null; voided?: boolean; transferGroup?: string | null;
   /** Imported values when the user corrected amount or date (the original is never overwritten). */
   original?: { amount: number; date: string } | null;
 }

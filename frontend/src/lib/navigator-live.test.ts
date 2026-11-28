@@ -184,6 +184,48 @@ describe("helpers", () => {
     expect(noRate.total).toBeNull();
     expect(noRate.needsAttention).toHaveLength(1);
   });
+  it("frozen deposit money is capital but not liquid money or reserve until it unlocks", () => {
+    const dep = acc({
+      id: "d",
+      kind: "deposit",
+      balance: 500_000,
+      frozenUntil: "2027-03-01",
+      frozenKzt: 500_000,
+      availableKzt: 0,
+      earlyWithdrawal: "lose_interest",
+    });
+    const s = liveSnapshot({
+      today: "2026-11-21",
+      me: { ...me, essentialExpenses: 300_000 },
+      accounts: [acc({}), dep],
+      obligations: [],
+      incomes: [],
+    });
+    expect(s.total).toBe(600_000);
+    expect(s.liquid).toBe(100_000);
+    expect(s.savings).toBe(0);
+    expect(s.reserveDays).toBe(0);
+    expect(s.frozen).toBe(500_000);
+    expect(s.unlocks).toEqual([{ date: "2027-03-01", amount: 500_000, name: "Kaspi Gold" }]);
+    expect(s.reserveDaysWithEarly).toBe(50); // reference line only
+    const open = acc({
+      id: "d",
+      kind: "deposit",
+      balance: 500_000,
+      frozenUntil: "2026-11-01",
+      frozenKzt: 0,
+      availableKzt: 500_000,
+    });
+    const after = liveSnapshot({
+      today: "2026-11-21",
+      me: { ...me, essentialExpenses: 300_000 },
+      accounts: [open],
+      obligations: [],
+      incomes: [],
+    });
+    expect(after.savings).toBe(500_000);
+    expect(after.frozen).toBe(0);
+  });
   it("month ranges and the list of recent months", () => {
     expect(monthRange("2026-02")).toEqual({ from: "2026-02-01", to: "2026-02-28" });
     expect(recentMonths("2026-01-10", 3)).toEqual(["2026-01", "2025-12", "2025-11"]);

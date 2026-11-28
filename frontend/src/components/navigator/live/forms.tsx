@@ -134,6 +134,10 @@ export function TxDialog({
     notify(msg);
   };
   const manual = !tx || tx.source === "manual";
+  const [kind, setKind] = useState<TxKind>(tx ? txKind(tx) : "expense");
+  const transfer = !tx && kind === "transfer_own";
+  // one id per opened form: a repeated submit (double click, retry) cannot create a second transfer
+  const [requestId] = useState(() => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
   const save = useWrite(async (f: FormData) => {
     const kind = str(f.get("kind")) as TxKind;
     const abs = Number(f.get("amount"));
@@ -144,6 +148,20 @@ export function TxDialog({
       category: str(f.get("category")) || undefined,
       note: str(f.get("note")) || null,
     };
+    if (!tx && kind === "transfer_own") {
+      const from = str(f.get("account")),
+        to = str(f.get("toAccount"));
+      if (from === to) throw new Error(ru.dep.transferSame);
+      return api.createTransfer({
+        fromAccountId: from,
+        toAccountId: to,
+        amount: abs,
+        toAmount: num(f.get("toAmount")),
+        date: fields.date,
+        note: fields.note,
+        requestId,
+      });
+    }
     if (!tx)
       return api.createTx({
         ...fields,
@@ -194,7 +212,7 @@ export function TxDialog({
           )}
           <label className="nav-field">
             {ru.live.transactions.kind}
-            <select name="kind" defaultValue={tx ? txKind(tx) : "expense"}>
+            <select name="kind" value={kind} onChange={(e) => setKind(e.target.value as TxKind)}>
               {KINDS.map((k) => (
                 <option key={k} value={k}>
                   {ru.txKind[k]}
@@ -219,6 +237,31 @@ export function TxDialog({
             <input name="date" type="date" required max={today} defaultValue={tx?.date ?? today} />
           </label>
           {manual && <AccountSelect accounts={accounts} value={tx?.accountId} />}
+          {transfer && (
+            <>
+              <p className="nav-small">{ru.dep.transferHint}</p>
+              <label className="nav-field">
+                {ru.dep.transferTo}
+                <select name="toAccount" required defaultValue={accounts[1]?.id ?? accounts[0]?.id}>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {bankName(a.bank)} · {a.name} ({a.currency})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="nav-field">
+                {ru.dep.transferToAmount}
+                <input
+                  name="toAmount"
+                  type="number"
+                  min={0.01}
+                  step={0.01}
+                  placeholder={ru.common.unknown}
+                />
+              </label>
+            </>
+          )}
           {manual ? (
             <label className="nav-field">
               {c.tx.description}

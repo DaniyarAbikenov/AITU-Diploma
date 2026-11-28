@@ -35,12 +35,23 @@ export type LiveSnapshot = {
   confirmedIncomes: IncomeSource[];
   sts: SafeToSpend | null;
   reserveDays: number | null;
+  /** Money frozen today (tenge): part of `total`, not of `liquid` / `savings`. */
+  frozen: number;
+  unlocks: { date: string; amount: number; name: string }[];
+  /** Reference only: reserve days if deposits that allow it were withdrawn early. */
+  reserveDaysWithEarly: number | null;
 };
 
 /** Money on the account now in its own currency: the known balance plus manual operations entered after it. */
 export const accountNow = (a: Account) => a.currentBalance ?? a.balance;
 const sum = (xs: Account[]) =>
   xs.length ? xs.reduce((a, x) => a + (accountKzt(x) ?? 0), 0) : null;
+
+/** Frozen part in tenge (0 when nothing is frozen today) and the available rest (BR-11, BR-14). */
+export const frozenKzt = (a: Account) => a.frozenKzt ?? 0;
+export const availableKzt = (a: Account) => a.availableKzt ?? accountKzt(a);
+const sumAvailable = (xs: Account[]) =>
+  xs.length ? xs.reduce((a, x) => a + (availableKzt(x) ?? 0), 0) : null;
 
 /** Planned expenses that still need money: not cancelled, not fully paid. */
 export const openPlannedExpenses = (planned: PlannedPayment[]) =>
@@ -57,9 +68,18 @@ export function liveSnapshot(input: {
   const usable = input.accounts.filter(usableAccount);
   const needsAttention = input.accounts.filter((a) => !usableAccount(a));
   const liquidAccounts = usable.filter((a) => a.kind === "current" || a.kind === "cash");
-  const savingsAccounts = usable.filter((a) => a.kind === "savings");
-  const liquid = sum(liquidAccounts),
-    savings = sum(savingsAccounts);
+  const savingsAccounts = usable.filter((a) => a.kind === "savings" || a.kind === "deposit");
+  // the liquid pool and the reserve take only available money; frozen deposits stay in capital (total)
+  const liquid = sumAvailable(liquidAccounts),
+    savings = sumAvailable(savingsAccounts);
+  const frozenAccounts = usable.filter((a) => frozenKzt(a) > 0);
+  const frozen = frozenAccounts.reduce((a, x) => a + frozenKzt(x), 0);
+  const unlocks = frozenAccounts
+    .map((a) => ({ date: a.frozenUntil!, amount: frozenKzt(a), name: a.name }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const earlyFrozen = frozenAccounts
+    .filter((a) => a.earlyWithdrawal === "yes" || a.earlyWithdrawal === "lose_interest")
+    .reduce((a, x) => a + frozenKzt(x), 0);
   const confirmedPayments = input.obligations.filter((o) => o.confirmed && !o.rejected);
   const confirmedIncomes = input.incomes.filter((i) => i.confirmed && !i.rejected);
   const sts =
@@ -91,6 +111,12 @@ export function liveSnapshot(input: {
     confirmedIncomes,
     sts,
     reserveDays: savings === null ? null : reserveDays(savings, input.me.essentialExpenses),
+    frozen,
+    unlocks,
+    reserveDaysWithEarly:
+      earlyFrozen > 0
+        ? reserveDays((savings ?? 0) + earlyFrozen, input.me.essentialExpenses)
+        : null,
   };
 }
 

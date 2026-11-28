@@ -202,3 +202,57 @@ export function CompareMonths({ month }: { month: string }) {
     </Panel>
   );
 }
+
+/** Ambiguous transfer pairs from statements: the user picks which incoming operation is the same transfer. */
+export function TransferPairsPanel({ notify }: { notify: (m: string) => void }) {
+  const cands = useQuery(q.transferCandidates);
+  const all = useQuery({ ...q.transactions, enabled: !!cands.data?.length });
+  const link = useWrite(
+    ({ outId, inId }: { outId: string; inId: string }) => api.linkTransfer(outId, inId),
+    () => notify(ru.crud.saved),
+  );
+  if (!cands.data?.length) return null;
+  const byId = new Map((all.data ?? []).map((x) => [x.id, x]));
+  const label = (id: string) => {
+    const x = byId.get(id);
+    return x ? `${x.date} · ${x.merchant} · ${money(Math.abs(x.amount))}` : id;
+  };
+  return (
+    <Panel title={ru.dep.pairsTitle}>
+      <p className="nav-small">{ru.dep.pairsText}</p>
+      <div className="nav-live-list">
+        {cands.data.map((c) => (
+          <form
+            key={c.outId}
+            className="nav-live-row"
+            onSubmit={(e) => {
+              e.preventDefault();
+              link.mutate({
+                outId: c.outId,
+                inId: String(new FormData(e.currentTarget).get("in")),
+              });
+            }}
+          >
+            <div>
+              <strong>{label(c.outId)}</strong>
+            </div>
+            <label className="nav-field">
+              {ru.dep.transferTo}
+              <select name="in">
+                {c.inIds.map((id) => (
+                  <option key={id} value={id}>
+                    {label(id)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button className="nav-secondary" disabled={link.isPending}>
+              {ru.dep.link}
+            </button>
+          </form>
+        ))}
+      </div>
+      <FormError error={link.error} />
+    </Panel>
+  );
+}

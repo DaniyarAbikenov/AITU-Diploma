@@ -161,3 +161,24 @@ describe("foreign-currency accounts", () => {
     expect(await screen.findByText(/Результат: 45 259 ₸/)).toBeInTheDocument();
   });
 });
+
+describe("transfers between own accounts", () => {
+  it("creates both legs once even when the form is submitted twice", async () => {
+    await open();
+    fireEvent.click(screen.getByRole("button", { name: "Добавить операцию" }));
+    const d = within(dialog());
+    fireEvent.change(d.getByLabelText("Тип"), { target: { value: "transfer_own" } });
+    expect(d.getByText(/две связанные операции/)).toBeInTheDocument();
+    fireEvent.change(d.getByLabelText("Сумма (в валюте счёта)"), { target: { value: "50000" } });
+    fireEvent.change(d.getByLabelText("Описание"), { target: { value: "На депозит" } });
+    const spy = vi.spyOn(api, "createTransfer");
+    const save = d.getByRole("button", { name: "Сохранить" });
+    fireEvent.click(save);
+    fireEvent.click(save);
+    expect(await screen.findByText("Успешно сохранено")).toBeInTheDocument();
+    const ids = new Set(spy.mock.calls.map((c) => c[0].requestId));
+    expect(ids.size).toBe(1);
+    const legs = db.transactions.filter((t) => t.transferGroup?.startsWith("tr-"));
+    expect(legs.map((t) => t.amount).sort((a, b) => a - b)).toEqual([-50000, 50000]);
+  });
+});

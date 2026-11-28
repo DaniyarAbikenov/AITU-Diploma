@@ -11,7 +11,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ru } from "@/i18n/ru";
-import { formatMonth } from "@/lib/navigator-live";
+import { formatDay, formatMonth } from "@/lib/navigator-live";
+import { compact, money } from "../model";
 import { daysInMonth, monthlyDate } from "@/lib/safe-to-spend";
 import { Panel } from "../shared";
 import { IncomesPanel, ObligationsPanel, PlannedPanel } from "./LivePayments";
@@ -24,6 +25,7 @@ export function LiveCalendar({
   planned,
   accounts,
   today,
+  snap,
   notify,
 }: LiveProps) {
   const [offset, setOffset] = useState(0),
@@ -54,6 +56,12 @@ export function LiveCalendar({
     (x) => x.status !== "cancelled" && x.dueOn.slice(0, 7) === monthKey,
   ))
     put(+pl.dueOn.slice(8), { key: "p" + pl.id, name: pl.name, pending: pl.status !== "paid" });
+  for (const u of snap.unlocks.filter((x) => x.date.slice(0, 7) === monthKey))
+    put(+u.date.slice(8), {
+      key: "u" + u.name + u.date,
+      name: ru.dep.unlockEvent(compact(u.amount)),
+      pending: false,
+    });
   return (
     <>
       <Panel
@@ -105,6 +113,19 @@ export function LiveCalendar({
           })}
         </div>
       </Panel>
+      {snap.unlocks.length > 0 && (
+        <Panel title={ru.dep.unlockTitle}>
+          <p className="nav-small">{ru.dep.unlockHint}</p>
+          {snap.unlocks.map((u) => (
+            <div className="nav-account" key={u.name + u.date}>
+              <span>
+                {formatDay(u.date)} · {u.name}
+              </span>
+              <strong>{ru.dep.unlockEvent(money(u.amount))}</strong>
+            </div>
+          ))}
+        </Panel>
+      )}
       <IncomesPanel incomes={incomes} onEdit={setEditing} notify={notify} />
       <ObligationsPanel obligations={obligations} notify={notify} />
       <PlannedPanel planned={planned} accounts={accounts} today={today} notify={notify} />

@@ -2,7 +2,7 @@
 import type {
   Account, BalancePoint, Category, CityPrice, DashboardSummary, DtiPoint, Goal, GoalProjection, ImportReport, IncomeSource,
   Insight, MacroIndicator, MerchantRule, MonthEndForecast, BalanceForecast, Obligation, ObligationsCalendar, PersonalInflation,
-  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction, User, AccountIn, TxKind, TxQuery, Decision, Rates, TransactionIn, TransactionPatch, PlannedPayment, PlannedIn, PlannedPatch, SettleIn,
+  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction, User, AccountIn, TxKind, TxQuery, Decision, Rates, TransactionIn, TransferIn, TransactionPatch, PlannedPayment, PlannedIn, PlannedPatch, SettleIn,
 } from "./types";
 
 export const AS_OF = "2026-10-19";
@@ -345,4 +345,16 @@ export function settlePlanned(id: string, s: SettleIn): PlannedPayment {
   p.paid += amount;
   p.settlements.push({ transactionId: s.transactionId ?? "m" + Date.now(), amount, period: p.dueOn });
   return plannedStatus(p);
+}
+
+export function createTransfer(tr: TransferIn): Transaction[] {
+  const group = "tr-" + tr.requestId;
+  const done = db.transactions.filter((t) => t.transferGroup === group);
+  if (done.length) return done;
+  const legs: Transaction[] = [
+    { id: "m" + Date.now(), date: tr.date, amount: -tr.amount, currency: "KZT", merchant: "Перевод", categoryId: "transfers", accountId: tr.fromAccountId, needsReview: false, internal: true, kind: "transfer_own", kindSource: "user", source: "manual", transferGroup: group },
+    { id: "m" + (Date.now() + 1), date: tr.date, amount: tr.toAmount ?? tr.amount, currency: "KZT", merchant: "Перевод", categoryId: "transfers", accountId: tr.toAccountId, needsReview: false, internal: true, kind: "transfer_own", kindSource: "user", source: "manual", transferGroup: group },
+  ];
+  db.transactions.unshift(...legs);
+  return legs;
 }

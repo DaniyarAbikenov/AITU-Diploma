@@ -96,6 +96,21 @@ export function LiveHome(props: LiveProps) {
                 </span>
                 <strong>{money(snap.total ?? 0)}</strong>
               </div>
+              {snap.frozen > 0 && (
+                <>
+                  <div className="nav-account">
+                    <span>{ru.dep.available}</span>
+                    <strong>{money((snap.total ?? 0) - snap.frozen)}</strong>
+                  </div>
+                  <div className="nav-account">
+                    <span>{ru.dep.frozen}</span>
+                    <strong>
+                      {ru.dep.frozenUntil(money(snap.frozen), formatDay(snap.unlocks[0].date))}
+                    </strong>
+                  </div>
+                  <p className="nav-small">{ru.dep.capitalHint}</p>
+                </>
+              )}
             </>
           ) : (
             <Missing action={t.noAccountsAction} onAction={() => go("profile")}>
@@ -139,7 +154,12 @@ export function LiveHome(props: LiveProps) {
               {t.reserveTitle} <Preliminary />
             </small>
             {snap.reserveDays !== null ? (
-              <strong>{t.reserveDays(snap.reserveDays)}</strong>
+              <>
+                <strong>{t.reserveDays(snap.reserveDays)}</strong>
+                {snap.reserveDaysWithEarly !== null && (
+                  <small>{ru.dep.early(t.reserveDays(snap.reserveDaysWithEarly))}</small>
+                )}
+              </>
             ) : (
               <small>{snap.savings === null ? t.reserveNoSavings : t.reserveNoExpenses}</small>
             )}
