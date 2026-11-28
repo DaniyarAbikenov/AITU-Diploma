@@ -540,8 +540,23 @@ class ObligationsCalendarOut(BaseModel):
 
 
 class DtiPointOut(BaseModel):
+    """Debt payments of a month over income of the month. dti is null when the month has no usable income
+    (none, or far below the confirmed expected income): no percentage is shown instead of dividing by almost 0."""
     month: str
-    dti: float
+    dti: float | None
+    debt: int | float = 0
+    income: int | float = 0
+    expectedIncome: int | float | None = None
+    incomeSource: Literal["operations"] = "operations"
+    status: Literal["ok", "no_income", "incomplete_income", "check"] = "ok"
+    payments: int = 0
+
+
+class DtiPaymentOut(BaseModel):
+    id: str
+    date: str
+    merchant: str
+    amount: int | float
 
 
 class IncomeSourceOut(BaseModel):

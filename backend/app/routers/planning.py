@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -12,6 +12,7 @@ from app.core.security import current_user
 from app.models import Category, Goal, IncomeSource, Obligation, Transaction, User
 from app.schemas import (
     CalendarMonth,
+    DtiPaymentOut,
     DtiPointOut,
     GoalIn,
     GoalOut,
@@ -117,9 +118,11 @@ def delete_obligation(ob_id: int, u: User = Depends(current_user), db: Session =
     return Ok()
 
 
-def _monthly_income(db: Session, u: User) -> float:
-    rows = db.scalars(select(IncomeSource).where(IncomeSource.user_id == u.id, IncomeSource.rejected.is_(False)))
-    return sum(i.amount_minor for i in rows) / 100
+def _monthly_income(db: Session, u: User, confirmed_only: bool = False) -> float:
+    stmt = select(IncomeSource).where(IncomeSource.user_id == u.id, IncomeSource.rejected.is_(False))
+    if confirmed_only:
+        stmt = stmt.where(IncomeSource.confirmed.is_(True))
+    return sum(i.amount_minor for i in db.scalars(stmt)) / 100
 
 
 @router.get("/obligations/calendar", response_model=ObligationsCalendarOut)
@@ -140,24 +143,61 @@ def calendar(months: int = 12, u: User = Depends(current_user), db: Session = De
     return ObligationsCalendarOut(months=out, income=_monthly_income(db, u))
 
 
+DTI_CHECK = 1.0  # above 100 % of income the month is shown with "check the data"
+INCOMPLETE_SHARE = 0.5  # income in statements below half of the confirmed expected income = incomplete month
+
+
+def _dti_rows(db: Session, u: User, first: date, last: date):
+    """Cash-flow operations in tenge (own transfers, deposits and cancelled operations are excluded by is_cashflow)."""
+    return db.execute(select(Transaction.id, eff_date, eff_amount, Transaction.category_id, Transaction.merchant).where(
+        Transaction.user_id == u.id, is_cashflow(), Transaction.currency == "KZT", eff_date >= first,
+        eff_date <= last)).all()
+
+
 @router.get("/obligations/dti-history", response_model=list[DtiPointOut])
 def dti_history(months: int = 12, u: User = Depends(current_user), db: Session = Depends(get_db)):
-    """Debt-to-income per completed month: loan/installment payments seen in the statements over income seen."""
+    """Debt-to-income per completed month: loan and installment payments (operations, not balances) over the income
+    received in that month. Months without usable income get dti=null with the reason; above 100 % → "check"."""
     today = as_of()
     cur = today.replace(day=1)
     keys = [month_key(add_months(cur, -k)) for k in range(max(1, min(months, 36)), 0, -1)]
     income = dict.fromkeys(keys, 0)
     debt = dict.fromkeys(keys, 0)
-    rows = db.execute(select(eff_date, eff_amount, Transaction.category_id).where(
-        Transaction.user_id == u.id, is_cashflow())).all()
-    for on, amount, cat in rows:
+    count = dict.fromkeys(keys, 0)
+    for _, on, amount, cat, _m in _dti_rows(db, u, add_months(cur, -len(keys)), cur):
         k = month_key(on)
         if k in income:
             if cat == "income" and amount > 0:
                 income[k] += amount
             elif cat == "credit" and amount < 0:
                 debt[k] += -amount
-    return [DtiPointOut(month=k, dti=round(debt[k] / income[k], 3)) for k in keys if income[k] > 0]
+                count[k] += 1
+    expected = _monthly_income(db, u, confirmed_only=True) * 100 or None
+    out = []
+    for k in keys:
+        if income[k] == 0 and debt[k] == 0:
+            continue  # no data at all: a gap, not a 0 %
+        point = DtiPointOut(month=k, dti=None, debt=to_major(debt[k]), income=to_major(income[k]),
+                            expectedIncome=None if expected is None else to_major(int(expected)), payments=count[k])
+        if income[k] == 0:
+            point.status = "no_income"
+        elif expected and income[k] < INCOMPLETE_SHARE * expected:
+            point.status = "incomplete_income"
+        else:
+            point.dti = round(debt[k] / income[k], 3)
+            point.status = "check" if point.dti > DTI_CHECK else "ok"
+        out.append(point)
+    return out
+
+
+@router.get("/obligations/dti-payments", response_model=list[DtiPaymentOut])
+def dti_payments(month: str, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Operations counted as debt payments in a month, so the user can spot and re-type a wrong one."""
+    y, m = (int(x) for x in month.split("-"))
+    first = date(y, m, 1)
+    rows = _dti_rows(db, u, first, add_months(first, 1) - timedelta(days=1))
+    return [DtiPaymentOut(id=str(i), date=on.isoformat(), merchant=merchant, amount=to_major(-amount))
+            for i, on, amount, cat, merchant in rows if cat == "credit" and amount < 0]
 
 
 # ---- income
