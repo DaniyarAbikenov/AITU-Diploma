@@ -10,21 +10,27 @@ export interface User {
 }
 export type ProfilePatch = Partial<Pick<User, "name" | "city" | "timezone" | "plannedIncome" | "essentialExpenses" | "workHours">>;
 export type AccountKind = "current" | "savings" | "cash";
+export type AccountCurrency = "KZT" | "USD" | "EUR" | "RUB";
+export interface Rate { currency: string; rate: number; rateDate: string; fetchedAt?: string | null; source: string; stale: boolean }
+export interface Rates { base: "KZT"; source: string; rates: Rate[] }
 export interface Account {
-  id: string; bank: string; name: string; currency: "KZT" | "USD"; balance: number;
+  /** balance / currentBalance are in the account currency; *Kzt fields are tenge at the latest official rate. */
+  id: string; bank: string; name: string; currency: AccountCurrency; balance: number;
+  rate?: number | null; rateDate?: string | null; rateStale?: boolean;
+  balanceKzt?: number | null; currentBalanceKzt?: number | null; revaluationKzt?: number | null;
   kind?: AccountKind | null; confirmed?: boolean;
   /** false: no checkpoint or statement balance, `balance` is a placeholder and must not be shown as 0. */
   balanceKnown?: boolean; balanceAsOf?: string | null; balanceSource?: "manual" | "statement" | null;
   /** Checkpoint plus manual operations after it; null when the balance is unknown. */
   currentBalance?: number | null;
 }
-export interface AccountIn { bank: string; name: string; kind: AccountKind; currency?: "KZT" | "USD"; balance?: number | null; balanceAsOf?: string | null }
+export interface AccountIn { bank: string; name: string; kind: AccountKind; currency?: AccountCurrency; balance?: number | null; balanceAsOf?: string | null }
 export interface Checkpoint { id: string; accountId: string; balance: number; asOf: string; source: "manual" | "statement" }
 export type TxKind = "expense" | "income" | "income_salary" | "income_other" | "transfer_own" | "transfer_third_party";
 
 export interface Category { id: string; name: string; color: string }
 export interface Transaction {
-  id: string; date: string; amount: number; currency: "KZT" | "USD";
+  id: string; date: string; amount: number; currency: string;
   merchant: string; categoryId: string; accountId: string; needsReview: boolean; internal?: boolean;
   /** Effective type: the user's decision when kindSource = "user", otherwise derived from the import. */
   kind?: TxKind; kindSource?: "user" | "auto";

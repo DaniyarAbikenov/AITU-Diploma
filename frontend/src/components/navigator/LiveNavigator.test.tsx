@@ -4,7 +4,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Navigator } from "./Navigator";
 import { accounts, db } from "@/api/mock";
 import { signIn as authSignIn, signOut } from "@/lib/auth";
-vi.mock("@/components/charts", () => ({ Chart: () => <div>График</div>, baseAxis: () => ({}) }));
+vi.mock("@/components/charts", () => ({
+  Chart: () => <div>График</div>,
+  FanChart: () => <div>График</div>,
+  Sparkline: () => <div>Спарклайн</div>,
+  baseAxis: () => ({}),
+}));
 
 function show() {
   return render(

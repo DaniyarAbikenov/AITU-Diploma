@@ -8,6 +8,7 @@ import { formatPercent } from "@/lib/format";
 import { money } from "../model";
 import { Panel } from "../shared";
 import { Missing } from "./common";
+import { RatesPanel } from "./RatesPanel";
 import type { LiveProps } from "./types";
 
 const t = ru.macro;
@@ -21,6 +22,7 @@ export function LiveMacro({ me }: LiveProps) {
   const p = pi.data;
   return (
     <>
+      <RatesPanel />
       <Panel title={t.inflationTitle}>
         {pi.isPending ? (
           <p className="nav-small">{ru.common.loading}</p>

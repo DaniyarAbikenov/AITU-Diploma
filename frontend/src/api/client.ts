@@ -29,11 +29,12 @@ export const api = {
   navigator: async () => readNavigator(),
   updateNavigator: async (action: NavigatorAction) => mutateNavigator(action),
   resetNavigator: async () => resetNavigator(),
+  rates: () => call<T.Rates>("/rates", () => m.rates),
   me: () => call<T.User>("/me", () => m.db.me),
   updateMe: (patch: T.ProfilePatch) => call<T.User>("/me", () => Object.assign(m.db.me, patch), body("PATCH", patch)),
   accounts: () => call<T.Account[]>("/accounts", () => m.accounts),
   createAccount: (a: T.AccountIn) => call<T.Account>("/accounts", () => m.createAccount(a), body("POST", a)),
-  updateAccount: (id: string, patch: Partial<Pick<T.Account, "bank" | "name" | "kind" | "confirmed">>) =>
+  updateAccount: (id: string, patch: Partial<Pick<T.Account, "bank" | "name" | "kind" | "confirmed" | "currency">>) =>
     call<T.Account>("/accounts/" + id, () => Object.assign(m.accounts.find((a) => a.id === id)!, patch), body("PATCH", patch)),
   addCheckpoint: (id: string, cp: { balance: number; asOf: string; source?: "manual" | "statement" }) =>
     call<T.Account>(`/accounts/${id}/checkpoints`, () => m.addCheckpoint(id, cp), body("POST", cp)),
@@ -111,6 +112,8 @@ export const api = {
 
 export const q = {
   navigator: queryOptions({ queryKey: ["navigator"], queryFn: api.navigator, enabled: typeof window !== "undefined", retry: false }),
+  /** NBK publishes one official rate a day; the server re-reads it hourly, the page re-asks every 10 minutes. */
+  rates: queryOptions({ queryKey: ["rates"], queryFn: api.rates, refetchInterval: 10 * 60 * 1000 }),
   me: queryOptions({ queryKey: ["me"], queryFn: api.me }),
   accounts: queryOptions({ queryKey: ["accounts"], queryFn: api.accounts }),
   transactionsFor: (f: T.TxQuery) => queryOptions({ queryKey: ["transactions", f], queryFn: () => api.transactionsFor(f) }),

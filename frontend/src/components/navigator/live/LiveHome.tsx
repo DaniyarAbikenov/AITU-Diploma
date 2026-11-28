@@ -7,9 +7,9 @@ import { bankName, ru } from "@/i18n/ru";
 import { formatPercent } from "@/lib/format";
 import { accountNow, formatDay } from "@/lib/navigator-live";
 import { addDays } from "@/lib/safe-to-spend";
-import { money } from "../model";
+import { money, moneyIn } from "../model";
 import { Panel } from "../shared";
-import { Missing, Preliminary } from "./common";
+import { KztHint, Missing, Preliminary } from "./common";
 import { InsightsPanel, MonthEndPanel } from "./LiveInsights";
 import { TxList } from "./LiveTransactions";
 import type { LiveProps } from "./types";
@@ -83,11 +83,17 @@ export function LiveHome(props: LiveProps) {
                     {bankName(a.bank)} · {a.name}{" "}
                     <small className="nav-small">({ru.accountKind[a.kind!]})</small>
                   </span>
-                  <strong>{money(accountNow(a))}</strong>
+                  <strong>
+                    {moneyIn(accountNow(a), a.currency)}
+                    <br />
+                    <KztHint a={a} />
+                  </strong>
                 </div>
               ))}
               <div className="nav-account">
-                <span>Итого</span>
+                <span>
+                  Итого <small className="nav-small">{ru.fx.inTenge}</small>
+                </span>
                 <strong>{money(snap.total ?? 0)}</strong>
               </div>
             </>

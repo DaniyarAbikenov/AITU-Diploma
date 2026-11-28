@@ -25,6 +25,9 @@ import { ru } from "@/i18n/ru";
 /** One tenge format for the whole app (src/lib/format.ts): "1 080 000 ₸" and "1,08 млн ₸". */
 export const money = (n: number) => formatMoney(n);
 export const compact = (n: number) => formatMoneyShort(n);
+/** Money in a given currency (accounts and operations keep their own currency). */
+export const moneyIn = (n: number, currency = "KZT") =>
+  formatMoney(n, (["KZT", "USD", "EUR", "RUB"].includes(currency) ? currency : "KZT") as "KZT");
 export const tabs = [
   { id: "home", name: ru.tabs.home, icon: LayoutDashboard },
   { id: "goals", name: ru.tabs.goals, icon: Target },

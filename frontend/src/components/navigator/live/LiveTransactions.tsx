@@ -4,8 +4,15 @@ import { ArrowDownLeft, ArrowLeftRight, Search, Send, Upload, Wallet } from "luc
 import { q } from "@/api/client";
 import type { Account, Transaction, TxKind } from "@/api/types";
 import { bankName, ru } from "@/i18n/ru";
-import { formatMonth, monthRange, monthTotals, recentMonths, txKind } from "@/lib/navigator-live";
-import { money } from "../model";
+import {
+  formatMonth,
+  monthRange,
+  monthTotals,
+  rateMap,
+  recentMonths,
+  txKind,
+} from "@/lib/navigator-live";
+import { money, moneyIn } from "../model";
 import { Panel } from "../shared";
 import { TxDialog } from "./forms";
 import { ImportPanel } from "./ImportPanel";
@@ -70,7 +77,7 @@ export function TxList({
             </span>
             <strong className={x.amount > 0 && kind !== "transfer_own" ? "nav-positive" : ""}>
               {kind === "transfer_own" ? "" : x.amount > 0 ? "+" : "−"}
-              {money(Math.abs(x.amount))}
+              {moneyIn(Math.abs(x.amount), x.currency)}
             </strong>
           </Tag>
         );
@@ -96,7 +103,8 @@ export function LiveTransactions({ accounts, today, notify }: LiveProps) {
   const rows = (query.data ?? []).filter(
     (x) => (!kind || txKind(x) === kind) && x.merchant.toLowerCase().includes(search.toLowerCase()),
   );
-  const totals = monthTotals(query.data ?? []);
+  const rates = useQuery(q.rates);
+  const totals = monthTotals(query.data ?? [], rateMap(rates.data?.rates));
   return (
     <>
       <div className="nav-actions">
@@ -124,6 +132,9 @@ export function LiveTransactions({ accounts, today, notify }: LiveProps) {
           <p>{t.own}</p>
           <h2>{money(totals.own)}</h2>
           <p className="nav-small">{t.ownHint}</p>
+          {totals.unconverted > 0 && (
+            <p className="nav-small">{ru.fx.unconverted(totals.unconverted)}</p>
+          )}
         </Panel>
       </div>
       <Panel title={`История операций · ${formatMonth(month)}`}>

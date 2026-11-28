@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Account, User } from "@/api/types";
 import {
   cautiousIncome,
+  convert,
   liveSnapshot,
   monthRange,
   monthTotals,
@@ -135,7 +136,53 @@ describe("helpers", () => {
         { ...base, id: "3", amount: -5_000, kind: "transfer_third_party" },
         { ...base, id: "4", amount: -2_000, internal: true },
       ]),
-    ).toEqual({ income: 300_000, expense: 5_000, own: 102_000 });
+    ).toEqual({ income: 300_000, expense: 5_000, own: 102_000, unconverted: 0 });
+  });
+  it("foreign-currency operations are converted to tenge or reported as unconverted", () => {
+    const base = {
+      merchant: "x",
+      categoryId: "other",
+      accountId: "a",
+      needsReview: false,
+      date: "2026-11-01",
+    };
+    const rows = [
+      { ...base, id: "1", amount: -10, currency: "USD" },
+      { ...base, id: "2", amount: -1000, currency: "KZT" },
+      { ...base, id: "3", amount: -5, currency: "GBP" },
+    ];
+    expect(monthTotals(rows, { USD: 470 })).toMatchObject({ expense: 5_700, unconverted: 1 });
+    expect(convert(100, "USD", "KZT", { USD: 470 })).toBe(47_000);
+    expect(convert(47_000, "KZT", "EUR", { EUR: 470 })).toBe(100);
+    expect(convert(1, "GBP", "KZT", {})).toBeNull();
+  });
+  it("a USD account counts in tenge only through its official rate", () => {
+    const usd = acc({
+      id: "u",
+      currency: "USD",
+      balance: 1000,
+      kind: "savings",
+      balanceKzt: 470_000,
+      currentBalanceKzt: 470_000,
+    });
+    const s = liveSnapshot({
+      today: "2026-11-21",
+      me: { ...me, essentialExpenses: 300_000 },
+      accounts: [acc({}), usd],
+      obligations: [],
+      incomes: [],
+    });
+    expect(s.total).toBe(570_000);
+    expect(s.savings).toBe(470_000);
+    const noRate = liveSnapshot({
+      today: "2026-11-21",
+      me,
+      accounts: [acc({ id: "u", currency: "USD", balance: 1000 })],
+      obligations: [],
+      incomes: [],
+    });
+    expect(noRate.total).toBeNull();
+    expect(noRate.needsAttention).toHaveLength(1);
   });
   it("month ranges and the list of recent months", () => {
     expect(monthRange("2026-02")).toEqual({ from: "2026-02-01", to: "2026-02-28" });

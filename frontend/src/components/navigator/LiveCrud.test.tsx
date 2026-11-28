@@ -5,7 +5,12 @@ import { Navigator } from "./Navigator";
 import { api } from "@/api/client";
 import { accounts, db } from "@/api/mock";
 import { signIn, signOut } from "@/lib/auth";
-vi.mock("@/components/charts", () => ({ Chart: () => <div>График</div>, baseAxis: () => ({}) }));
+vi.mock("@/components/charts", () => ({
+  Chart: () => <div>График</div>,
+  FanChart: () => <div>График</div>,
+  Sparkline: () => <div>Спарклайн</div>,
+  baseAxis: () => ({}),
+}));
 
 function storage() {
   const values = new Map<string, string>();
@@ -48,10 +53,10 @@ describe("manual operations", () => {
     fireEvent.click(screen.getByRole("button", { name: "Добавить операцию" }));
     const d = within(dialog());
     fireEvent.change(d.getByLabelText("Описание"), { target: { value: "Рынок" } });
-    fireEvent.change(d.getByLabelText("Сумма, ₸"), { target: { value: "0" } });
-    fireEvent.submit(d.getByLabelText("Сумма, ₸").closest("form")!);
+    fireEvent.change(d.getByLabelText("Сумма (в валюте счёта)"), { target: { value: "0" } });
+    fireEvent.submit(d.getByLabelText("Сумма (в валюте счёта)").closest("form")!);
     expect(await d.findByRole("alert")).toHaveTextContent("больше нуля");
-    fireEvent.change(d.getByLabelText("Сумма, ₸"), { target: { value: "4500" } });
+    fireEvent.change(d.getByLabelText("Сумма (в валюте счёта)"), { target: { value: "4500" } });
     fireEvent.click(d.getByRole("button", { name: "Сохранить" }));
     expect(await screen.findByText("Успешно сохранено")).toBeInTheDocument();
     expect(db.transactions[0]).toMatchObject({
@@ -66,7 +71,7 @@ describe("manual operations", () => {
     fireEvent.click(screen.getByRole("button", { name: "Добавить операцию" }));
     const d = within(dialog());
     fireEvent.change(d.getByLabelText("Описание"), { target: { value: "Такси" } });
-    fireEvent.change(d.getByLabelText("Сумма, ₸"), { target: { value: "1200" } });
+    fireEvent.change(d.getByLabelText("Сумма (в валюте счёта)"), { target: { value: "1200" } });
     fireEvent.click(d.getByRole("button", { name: "Сохранить" }));
     expect(await d.findByRole("alert")).toHaveTextContent("Сеть недоступна");
     expect(d.getByLabelText("Описание")).toHaveValue("Такси");
@@ -126,5 +131,33 @@ describe("obligations and planned items", () => {
       }),
     );
     expect(await screen.findByText("Оплачено частично")).toBeInTheDocument();
+  });
+});
+
+describe("foreign-currency accounts", () => {
+  it("adds a USD account and shows its tenge equivalent with the NBK rate date", async () => {
+    await open("Профиль");
+    fireEvent.click(await screen.findByRole("button", { name: /Добавить счёт/ }));
+    fireEvent.change(screen.getByLabelText("Банк или место хранения"), {
+      target: { value: "Freedom Bank" },
+    });
+    fireEvent.change(screen.getByLabelText("Название счёта"), { target: { value: "Долларовый" } });
+    const form = screen.getByLabelText("Название счёта").closest("form")!;
+    fireEvent.change(within(form).getByLabelText("Валюта счёта"), { target: { value: "USD" } });
+    fireEvent.change(within(form).getByLabelText("Сумма (в валюте счёта)"), {
+      target: { value: "1000" },
+    });
+    fireEvent.click(within(form).getByRole("button", { name: "Сохранить" }));
+    await waitFor(() =>
+      expect(accounts.find((a) => a.name === "Долларовый")).toMatchObject({
+        currency: "USD",
+        balance: 1000,
+      }),
+    );
+    expect(await screen.findByText(/≈ 452 590 ₸ по курсу НБ РК/)).toBeInTheDocument();
+  });
+  it("converts in the Macro tab", async () => {
+    await open("Макро");
+    expect(await screen.findByText(/Результат: 45 259 ₸/)).toBeInTheDocument();
   });
 });

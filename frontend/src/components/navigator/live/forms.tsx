@@ -203,7 +203,7 @@ export function TxDialog({
             </select>
           </label>
           <label className="nav-field">
-            {c.tx.amount}
+            {ru.fx.amountInAccount}
             <input
               name="amount"
               type="number"

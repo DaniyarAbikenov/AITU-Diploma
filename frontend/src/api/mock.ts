@@ -2,7 +2,7 @@
 import type {
   Account, BalancePoint, Category, CityPrice, DashboardSummary, DtiPoint, Goal, GoalProjection, ImportReport, IncomeSource,
   Insight, MacroIndicator, MerchantRule, MonthEndForecast, BalanceForecast, Obligation, ObligationsCalendar, PersonalInflation,
-  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction, User, AccountIn, TxKind, TxQuery, Decision, TransactionIn, TransactionPatch, PlannedPayment, PlannedIn, PlannedPatch, SettleIn,
+  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction, User, AccountIn, TxKind, TxQuery, Decision, Rates, TransactionIn, TransactionPatch, PlannedPayment, PlannedIn, PlannedPatch, SettleIn,
 } from "./types";
 
 export const AS_OF = "2026-10-19";
@@ -91,9 +91,22 @@ export const db = {
   me: { id: "u1", email: "mock@example.com", name: "Айгерим", city: "Алматы", currency: "KZT", timezone: "Asia/Almaty", plannedIncome: null, essentialExpenses: null, workHours: null } as User,
 };
 
+export const rates: Rates = {
+  base: "KZT",
+  source: "Национальный банк РК, официальный курс (nationalbank.kz)",
+  rates: [
+    { currency: "USD", rate: 452.59, rateDate: AS_OF, fetchedAt: null, source: "demo-seed", stale: true },
+    { currency: "EUR", rate: 492.1, rateDate: AS_OF, fetchedAt: null, source: "demo-seed", stale: true },
+    { currency: "RUB", rate: 5.61, rateDate: AS_OF, fetchedAt: null, source: "demo-seed", stale: true },
+  ],
+};
+
 export function createAccount(a: AccountIn): Account {
   const acc: Account = { id: "acc-" + Date.now(), bank: a.bank, name: a.name, kind: a.kind, currency: a.currency ?? "KZT", balance: a.balance ?? 0,
     confirmed: true, balanceKnown: a.balance != null, balanceAsOf: a.balance != null ? a.balanceAsOf ?? AS_OF : null, balanceSource: a.balance != null ? "manual" : null };
+  const r = acc.currency === "KZT" ? 1 : rates.rates.find((x) => x.currency === acc.currency)?.rate;
+  if (r && acc.currency !== "KZT") Object.assign(acc, { rate: r, rateDate: AS_OF, rateStale: true });
+  if (r && a.balance != null) Object.assign(acc, { balanceKzt: Math.round(a.balance * r), currentBalanceKzt: Math.round(a.balance * r) });
   accounts.push(acc);
   return acc;
 }

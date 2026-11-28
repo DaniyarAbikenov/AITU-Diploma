@@ -2,19 +2,20 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Activity, Plus } from "lucide-react";
 import { api } from "@/api/client";
-import type { Account, AccountKind, ProfilePatch } from "@/api/types";
+import type { Account, AccountCurrency, AccountKind, ProfilePatch } from "@/api/types";
 import { updateSession } from "@/lib/auth";
 import { bankName, ru } from "@/i18n/ru";
 import { cautiousIncome, formatDay } from "@/lib/navigator-live";
-import { money } from "../model";
+import { money, moneyIn } from "../model";
 import { Panel } from "../shared";
-import { Missing } from "./common";
+import { KztHint, Missing } from "./common";
 import { ObligationsPanel } from "./LivePayments";
 import { PrivacyPanel } from "./PrivacyPanel";
 import type { LiveProps } from "./types";
 
 const t = ru.live.profile;
 const KINDS = Object.keys(ru.accountKind) as AccountKind[];
+const CURRENCIES: AccountCurrency[] = ["KZT", "USD", "EUR", "RUB"];
 const ZONES = [
   "Asia/Almaty",
   "Asia/Aqtobe",
@@ -180,7 +181,8 @@ function AccountRow({
     notify(t.saved);
   };
   const patch = useMutation({
-    mutationFn: (p: Partial<Pick<Account, "kind" | "confirmed">>) => api.updateAccount(a.id, p),
+    mutationFn: (p: Partial<Pick<Account, "kind" | "confirmed" | "currency">>) =>
+      api.updateAccount(a.id, p),
     onSuccess: done,
   });
   const checkpoint = useMutation({
@@ -201,12 +203,16 @@ function AccountRow({
         <p className="nav-small">
           {a.balanceKnown === false || !a.balanceAsOf
             ? t.balanceUnknown
-            : `${money(a.balance)} · ${t.balanceFrom(a.balanceSource ?? "manual", formatDay(a.balanceAsOf))}${
+            : `${moneyIn(a.balance, a.currency)} · ${t.balanceFrom(a.balanceSource ?? "manual", formatDay(a.balanceAsOf))}${
                 a.currentBalance != null && a.currentBalance !== a.balance
-                  ? ` · с ручными операциями после этой даты: ${money(a.currentBalance)}`
+                  ? ` · с ручными операциями после этой даты: ${moneyIn(a.currentBalance, a.currency)}`
                   : ""
               }`}
         </p>
+        <KztHint a={a} />
+        {a.revaluationKzt != null && a.revaluationKzt !== 0 && (
+          <p className="nav-small">{ru.fx.revaluation(money(a.revaluationKzt))}</p>
+        )}
       </div>
       <label className="nav-field">
         {t.kind}
@@ -219,6 +225,20 @@ function AccountRow({
           {KINDS.map((k) => (
             <option key={k} value={k}>
               {ru.accountKind[k]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="nav-field">
+        {ru.fx.currency}
+        <select
+          value={a.currency}
+          onChange={(e) => patch.mutate({ currency: e.target.value as AccountCurrency })}
+          aria-label={`${ru.fx.currency}: ${a.name}`}
+        >
+          {CURRENCIES.map((c) => (
+            <option key={c} value={c}>
+              {ru.fx.currencies[c]}
             </option>
           ))}
         </select>
@@ -252,7 +272,7 @@ function AccountRow({
             <input
               name="balance"
               type="number"
-              step={1}
+              step={0.01}
               required
               defaultValue={a.balanceKnown ? a.balance : ""}
             />
@@ -302,6 +322,7 @@ function NewAccount({ today, notify }: { today: string; notify: (m: string) => v
           bank: String(f.get("bank")).trim(),
           name: String(f.get("name")).trim(),
           kind: String(f.get("kind")) as AccountKind,
+          currency: String(f.get("currency")) as AccountCurrency,
           balance: opt(f.get("balance")),
           balanceAsOf: String(f.get("asOf") || today),
         });
@@ -331,8 +352,18 @@ function NewAccount({ today, notify }: { today: string; notify: (m: string) => v
         </select>
       </label>
       <label className="nav-field">
-        {t.balance}
-        <input name="balance" type="number" step={1} placeholder={ru.common.unknown} />
+        {ru.fx.currency}
+        <select name="currency" defaultValue="KZT">
+          {CURRENCIES.map((c) => (
+            <option key={c} value={c}>
+              {ru.fx.currencies[c]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="nav-field">
+        {ru.fx.amountInAccount}
+        <input name="balance" type="number" step={0.01} placeholder={ru.common.unknown} />
       </label>
       <label className="nav-field">
         {t.balanceDate}

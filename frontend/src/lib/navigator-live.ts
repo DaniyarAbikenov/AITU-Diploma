@@ -1,6 +1,7 @@
 /** Working-mode rules on top of /api/v1 data: which money and which events count. Pure and tested. */
 import type {
   Account,
+  Rate,
   IncomeSource,
   Obligation,
   PlannedPayment,
@@ -10,9 +11,16 @@ import type {
 } from "@/api/types";
 import { reserveDays, safeToSpend, type SafeToSpend } from "./safe-to-spend";
 
-/** An account counts only when the user confirmed it, chose its type and its balance is known (null ≠ 0). */
+/** Money of the account now in tenge: a foreign-currency account at the latest official rate, never unconverted. */
+export const accountKzt = (a: Account): number | null =>
+  a.currentBalanceKzt ??
+  a.balanceKzt ??
+  (a.currency === "KZT" ? (a.currentBalance ?? a.balance) : null);
+
+/** An account counts only when the user confirmed it, chose its type, its balance is known (null ≠ 0) and,
+ * for a foreign currency, an official rate exists to convert it. */
 export const usableAccount = (a: Account) =>
-  !!a.confirmed && !!a.kind && a.balanceKnown !== false && a.currency === "KZT";
+  !!a.confirmed && !!a.kind && a.balanceKnown !== false && accountKzt(a) !== null;
 
 export type LiveSnapshot = {
   usable: Account[];
@@ -29,9 +37,10 @@ export type LiveSnapshot = {
   reserveDays: number | null;
 };
 
-/** Money on the account now: the known balance plus manual operations entered after it. */
+/** Money on the account now in its own currency: the known balance plus manual operations entered after it. */
 export const accountNow = (a: Account) => a.currentBalance ?? a.balance;
-const sum = (xs: Account[]) => (xs.length ? xs.reduce((a, x) => a + accountNow(x), 0) : null);
+const sum = (xs: Account[]) =>
+  xs.length ? xs.reduce((a, x) => a + (accountKzt(x) ?? 0), 0) : null;
 
 /** Planned expenses that still need money: not cancelled, not fully paid. */
 export const openPlannedExpenses = (planned: PlannedPayment[]) =>
@@ -94,19 +103,43 @@ export const cautiousIncome = (incomes: IncomeSource[]) =>
 export const txKind = (t: Transaction): TxKind =>
   t.kind ?? (t.internal ? "transfer_own" : t.amount > 0 ? "income" : "expense");
 
-/** Own transfers are neither income nor spending (FR-18). A transfer to another person is money spent. */
-export function monthTotals(rows: Transaction[]) {
+/** Own transfers are neither income nor spending (FR-18). A transfer to another person is money spent.
+ * Totals are in tenge: operations in another currency are converted with `rates` (tenge per unit) or, without a
+ * rate, left out and counted in `unconverted`. */
+export function monthTotals(rows: Transaction[], rates: Record<string, number> = {}) {
   let income = 0,
     expense = 0,
-    own = 0;
+    own = 0,
+    unconverted = 0;
   for (const t of rows) {
     if (t.voided) continue;
+    const r = t.currency === "KZT" || !t.currency ? 1 : rates[t.currency];
+    if (!r) {
+      unconverted += 1;
+      continue;
+    }
+    const v = t.amount * r;
     const k = txKind(t);
-    if (k === "transfer_own") own += Math.abs(t.amount);
-    else if (t.amount > 0) income += t.amount;
-    else expense += -t.amount;
+    if (k === "transfer_own") own += Math.abs(v);
+    else if (v > 0) income += v;
+    else expense += -v;
   }
-  return { income, expense, own };
+  return {
+    income: Math.round(income),
+    expense: Math.round(expense),
+    own: Math.round(own),
+    unconverted,
+  };
+}
+
+export const rateMap = (rates: Rate[] | undefined) =>
+  Object.fromEntries((rates ?? []).map((r) => [r.currency, r.rate])) as Record<string, number>;
+
+/** Convert between two currencies through tenge. */
+export function convert(amount: number, from: string, to: string, rates: Record<string, number>) {
+  const f = from === "KZT" ? 1 : rates[from],
+    t = to === "KZT" ? 1 : rates[to];
+  return f && t ? (amount * f) / t : null;
 }
 
 /** First and last day of a YYYY-MM month. */
