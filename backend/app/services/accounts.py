@@ -4,6 +4,7 @@ from datetime import date
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.config import as_of as app_today
 from app.core.money import to_major, to_minor
 from app.models import Account, AccountCheckpoint, ImportBatch, Transaction
 from app.schemas import AccountOut
@@ -14,7 +15,9 @@ USER_KINDS = ("expense", "income", "income_salary", "income_other", "transfer_ow
 
 def guess_kind(name: str) -> str:
     low = name.lower()
-    if "депозит" in low or "накоп" in low or "deposit" in low or "savings" in low:
+    if "депозит" in low or "deposit" in low:
+        return "deposit"
+    if "накоп" in low or "savings" in low:
         return "savings"
     if "налич" in low or "cash" in low:
         return "cash"
@@ -67,7 +70,25 @@ def account_out(db: Session, a: Account) -> AccountOut:
         then = fx.rate_on(db, a.currency, date.fromisoformat(as_of)) if a.currency != "KZT" else 1.0
         if then is not None:
             out.revaluationKzt = to_major(round(a.balance_minor * (r.rate - then)))
+    out.interestRate, out.earlyWithdrawal = a.interest_rate, a.early_withdrawal
+    if a.frozen_until is not None:
+        out.frozenUntil = a.frozen_until.isoformat()
+    if known:
+        now_minor = to_minor(current)
+        frozen = frozen_minor(a, now_minor)
+        out.frozenAmount, out.availableBalance = to_major(frozen), to_major(now_minor - frozen)
+        if r is not None:
+            out.frozenKzt = to_major(round(frozen * r.rate))
+            out.availableKzt = to_major(round((now_minor - frozen) * r.rate))
     return out
+
+
+def frozen_minor(a: Account, balance_minor: int, today: date | None = None) -> int:
+    """Blocked money today: none after frozen_until, the given part, or the whole (non-negative) balance."""
+    today = today or app_today()
+    if a.frozen_until is None or a.frozen_until <= today or balance_minor <= 0:
+        return 0
+    return balance_minor if a.frozen_minor is None else min(a.frozen_minor, balance_minor)
 
 
 def effective_kind(t: Transaction) -> str:

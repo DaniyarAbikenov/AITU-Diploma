@@ -56,7 +56,7 @@ def tx_out(t: Transaction) -> TransactionOut:
                           currency=t.currency, merchant=t.merchant, categoryId=t.category_id, accountId=str(t.account_id),
                           needsReview=t.needs_review, internal=t.internal, kind=acc_svc.effective_kind(t),
                           kindSource="user" if t.user_kind else "auto", source=t.source, note=t.user_note,
-                          voided=t.voided, original=original)
+                          voided=t.voided, original=original, transferGroup=t.transfer_group)
 
 
 def _snapshot(t: Transaction) -> dict:
@@ -115,6 +115,7 @@ def create_account(body: AccountIn, u: User = Depends(current_user), db: Session
     """An account the user adds by hand (for example cash). It is confirmed by definition."""
     a = Account(user_id=u.id, bank=body.bank.strip(), name=body.name.strip(), currency=body.currency, kind=body.kind,
                 confirmed=True, balance_minor=0)
+    _apply_availability(a, body, body.model_fields_set)
     db.add(a)
     db.flush()
     if body.balance is not None:
@@ -132,8 +133,20 @@ def update_account(account_id: int, body: AccountPatch, u: User = Depends(curren
         value = getattr(body, field)
         if value is not None:
             setattr(a, attr, value.strip() if isinstance(value, str) and field in ("bank", "name") else value)
+    _apply_availability(a, body, body.model_fields_set)
     db.commit()
     return acc_svc.account_out(db, a)
+
+
+def _apply_availability(a: Account, body, sent: set[str]) -> None:
+    if "frozenUntil" in sent:
+        a.frozen_until = date.fromisoformat(body.frozenUntil) if body.frozenUntil else None
+    if "frozenAmount" in sent:
+        a.frozen_minor = None if body.frozenAmount is None else to_minor(body.frozenAmount)
+    if "interestRate" in sent:
+        a.interest_rate = body.interestRate
+    if "earlyWithdrawal" in sent:
+        a.early_withdrawal = body.earlyWithdrawal
 
 
 def _cp_out(c: AccountCheckpoint) -> CheckpointOut:
@@ -256,10 +269,14 @@ def delete_transaction(tx_id: int, u: User = Depends(current_user), db: Session 
     t = _own_tx(db, u, tx_id)
     if t.source != "manual":
         raise ApiError(409, "Операцию из выписки нельзя удалить, её можно только отменить")
-    before = _snapshot(t)
-    _audit(db, t, "delete", before)
-    db.execute(delete(PlannedSettlement).where(PlannedSettlement.transaction_id == t.id))
-    db.delete(t)
+    legs = [t]
+    if t.transfer_group:  # a transfer is two linked operations: both go together
+        legs = list(db.scalars(select(Transaction).where(Transaction.user_id == u.id,
+                                                         Transaction.transfer_group == t.transfer_group)))
+    for leg in legs:
+        _audit(db, leg, "delete", _snapshot(leg))
+        db.execute(delete(PlannedSettlement).where(PlannedSettlement.transaction_id == leg.id))
+        db.delete(leg)
     db.commit()
     return Ok()
 

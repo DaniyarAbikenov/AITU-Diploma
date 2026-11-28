@@ -55,8 +55,10 @@ class Ok(BaseModel):
 
 
 # ---- accounts / transactions
-AccountKind = Literal["current", "savings", "cash"]
-TxKind = Literal["expense", "income", "income_salary", "income_other", "transfer_own", "transfer_third_party"]
+AccountKind = Literal["current", "savings", "deposit", "cash"]
+Early = Literal["yes", "no", "lose_interest"]
+TxKind = Literal["expense", "income", "income_salary", "income_other", "income_interest", "transfer_own",
+                 "transfer_third_party"]
 
 
 class AccountOut(BaseModel):
@@ -82,6 +84,14 @@ class AccountOut(BaseModel):
     currentBalanceKzt: int | float | None = None
     # change of the tenge equivalent since the balance date caused by the rate alone (not income or spending)
     revaluationKzt: int | float | None = None
+    # availability: frozen money stays in capital but not in the liquid pool until frozenUntil
+    frozenUntil: str | None = None
+    frozenAmount: int | float | None = None  # in the account currency, 0 when nothing is frozen today
+    availableBalance: int | float | None = None
+    frozenKzt: int | float | None = None
+    availableKzt: int | float | None = None
+    interestRate: float | None = None
+    earlyWithdrawal: Early | None = None
 
 
 class AccountIn(BaseModel):
@@ -89,16 +99,47 @@ class AccountIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     kind: AccountKind
     currency: Currency = "KZT"
+    frozenUntil: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    frozenAmount: float | None = Field(default=None, ge=0, le=1e12)
+    interestRate: float | None = Field(default=None, ge=0, le=100)
+    earlyWithdrawal: Early | None = None
     balance: float | None = Field(default=None, ge=-1e12, le=1e12)
     balanceAsOf: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
 
 
 class AccountPatch(BaseModel):
+    """Availability fields: sending null clears them (the money becomes available)."""
     bank: str | None = Field(default=None, min_length=1, max_length=80)
     name: str | None = Field(default=None, min_length=1, max_length=120)
     kind: AccountKind | None = None
     currency: Currency | None = None
     confirmed: bool | None = None
+    frozenUntil: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    frozenAmount: float | None = Field(default=None, ge=0, le=1e12)
+    interestRate: float | None = Field(default=None, ge=0, le=100)
+    earlyWithdrawal: Early | None = None
+
+
+class TransferIn(BaseModel):
+    """Move money between two own accounts: two linked operations, neither income nor expense. requestId makes a
+    repeated submit return the first transfer instead of creating a duplicate."""
+    fromAccountId: str
+    toAccountId: str
+    amount: float = Field(gt=0, le=1e12)  # in the source account currency
+    toAmount: float | None = Field(default=None, gt=0, le=1e12)  # in the target currency when currencies differ
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    note: str | None = Field(default=None, max_length=200)
+    requestId: str = Field(min_length=8, max_length=40)
+
+
+class TransferCandidate(BaseModel):
+    outId: str
+    inIds: list[str]
+
+
+class LinkIn(BaseModel):
+    outId: str
+    inId: str
 
 
 class CheckpointIn(BaseModel):
@@ -137,6 +178,7 @@ class TransactionOut(BaseModel):
     source: Literal["import", "manual"] = "import"
     note: str | None = None
     voided: bool = False
+    transferGroup: str | None = None
     # imported values when the user corrected them (null = no correction)
     original: dict | None = None
 

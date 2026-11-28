@@ -47,7 +47,13 @@ class Account(Base):
     name: Mapped[str] = mapped_column(String(120))
     currency: Mapped[str] = mapped_column(String(3), default="KZT")
     balance_minor: Mapped[int] = mapped_column(BigInteger, default=0)
-    kind: Mapped[str | None] = mapped_column(String(20), nullable=True)  # current | savings | cash; NULL = not set
+    kind: Mapped[str | None] = mapped_column(String(20), nullable=True)  # current | savings | deposit | cash; NULL = not set
+    # availability: money until `frozen_until` is the user's (counts in capital) but not available (not in the liquid
+    # pool, Safe-to-Spend or reserve days). frozen_minor = the blocked part; NULL with a date = the whole balance.
+    frozen_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    frozen_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    interest_rate: Mapped[float | None] = mapped_column(Float, nullable=True)  # % a year, for information
+    early_withdrawal: Mapped[str | None] = mapped_column(String(20), nullable=True)  # yes | no | lose_interest
     # accounts created by an import are proposals until the user confirms them in the UI
     confirmed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
@@ -137,6 +143,8 @@ class Transaction(Base):
     user_note: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # cancelled by the user: kept for history, excluded from every calculation
     voided: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # both legs of a move between the user's own accounts share this id (manual transfer or confirmed pair)
+    transfer_group: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     dedup_key: Mapped[str] = mapped_column(String(64))
 
 

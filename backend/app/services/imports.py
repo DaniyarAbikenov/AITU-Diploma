@@ -116,25 +116,37 @@ def import_statement(db: Session, user: User, parsed: ParsedStatement, source: s
     return batch
 
 
-def mark_internal_transfers(db: Session, user: User) -> int:
-    """A transfer out of one own account matched by an equal transfer in on another within +-1 day is internal:
-    it moves money between the user's accounts and is excluded from income and expense."""
-    txs = db.scalars(select(Transaction).where(Transaction.user_id == user.id, Transaction.category_id == "transfers",
-                                               Transaction.internal.is_(False))).all()
+def transfer_candidates(db: Session, user: User) -> list[tuple[Transaction, list[Transaction]]]:
+    """For every outgoing operation not yet a transfer: incoming operations on another own account with the same
+    amount and currency within +-1 day."""
+    txs = db.scalars(select(Transaction).where(Transaction.user_id == user.id, Transaction.internal.is_(False),
+                                               Transaction.user_kind.is_(None), Transaction.voided.is_(False),
+                                               Transaction.category_id == "transfers")).all()
     outs = [t for t in txs if t.amount_minor < 0]
     ins = [t for t in txs if t.amount_minor > 0]
-    used: set[int] = set()
-    marked = 0
+    out = []
     for o in outs:
-        for i in ins:
-            if i.id in used or i.account_id == o.account_id or i.amount_minor != -o.amount_minor:
-                continue
-            if abs((i.booked_on - o.booked_on).days) <= 1:
-                o.internal = i.internal = True
-                o.needs_review = i.needs_review = False
-                used.add(i.id)
-                marked += 2
-                break
+        match = [i for i in ins if i.account_id != o.account_id and i.amount_minor == -o.amount_minor
+                 and i.currency == o.currency and abs((i.booked_on - o.booked_on).days) <= 1]
+        if match:
+            out.append((o, match))
+    return out
+
+
+def mark_internal_transfers(db: Session, user: User) -> int:
+    """Link a pair automatically only when it is unambiguous: the outgoing operation has exactly one incoming twin
+    and that twin matches no other outgoing operation. Ambiguous pairs wait for the user (GET /transfers/candidates)."""
+    pairs = transfer_candidates(db, user)
+    twins_of: Counter = Counter(i.id for _, ins in pairs for i in ins)
+    marked = 0
+    for o, ins in pairs:
+        if len(ins) == 1 and twins_of[ins[0].id] == 1:
+            i = ins[0]
+            group = f"auto-{o.id}-{i.id}"
+            o.internal = i.internal = True
+            o.needs_review = i.needs_review = False
+            o.transfer_group = i.transfer_group = group
+            marked += 2
     return marked
 
 

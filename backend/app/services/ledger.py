@@ -104,10 +104,12 @@ def build_context(db: Session, user: User, as_of: date) -> Context:
 def _balance_kzt(db: Session, accounts: list[Account]) -> int:
     """All accounts in tenge: foreign-currency balances at the latest official rate (never summed unconverted)."""
     from app.services import fx
+    from app.services.accounts import frozen_minor
 
     total = 0
     for a in accounts:
-        kzt = fx.to_kzt_minor(a.balance_minor, fx.latest(db, a.currency))
+        available = a.balance_minor - frozen_minor(a, a.balance_minor)  # frozen deposits are not spendable money
+        kzt = fx.to_kzt_minor(available, fx.latest(db, a.currency))
         total += kzt or 0
     return total
 
