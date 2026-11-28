@@ -1,4 +1,5 @@
 """Overview plan, everyday needs and the user's rules for splitting a payout. Nothing here moves money."""
+import calendar
 from datetime import timedelta
 from typing import Literal
 
@@ -35,8 +36,11 @@ class RuleIn(BaseModel):
 
 
 def _need(n: DailyNeed, s: Snapshot) -> dict:
+    per_day = s.need_per_day(n, s.as_of)  # the other period is derived from the days of the current month
+    days = calendar.monthrange(s.as_of.year, s.as_of.month)[1]
     return {"id": str(n.id), "name": n.name, "amount": to_major(n.amount_minor), "period": n.period,
-            "coveredBy": n.covered_by, "skipped": s._covered(n)}
+            "coveredBy": n.covered_by, "skipped": s._covered(n),
+            "perDay": to_major(round(per_day)), "perMonth": to_major(round(per_day * days))}
 
 
 def _items(items: list[dict]) -> list[dict]:

@@ -52,7 +52,7 @@ def test_catalog_explains_disabled_entries(client):
     assert c["version"] == "1.0.0" and c["entries"] >= 200
     assert len(c["enabled"]) + len(c["disabled"]) == c["entries"]
     reasons = {d["id"]: d["reason"] for d in c["disabled"]}
-    assert "P1" in reasons["K032"] and "бизнес" in reasons["K161"] and "профиле" in reasons["K064"]
+    assert "P1" in reasons["K032"] and all(reasons[k] == "вне области продукта (физлица)" for k in ("K161", "K170", "K192")) and "профиле" in reasons["K064"]
     assert any(e["id"] == "K001" for e in c["enabled"])
 
 

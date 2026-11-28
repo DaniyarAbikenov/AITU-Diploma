@@ -1,10 +1,10 @@
-"""Perimeter, everyday needs, the set-aside suggestion and payout rules (synthetic data, tests run on 2026-10-20)."""
+"""Everyday needs, the set-aside suggestion and payout rules (synthetic data, tests run on 2026-10-20)."""
 import uuid
 
 import pytest
 
 from app.core.db import SessionLocal
-from app.models import AllocationRule, AmountRule, DailyNeed, IncomeAllocation, InsightState, User
+from app.models import Account, AllocationRule, AmountRule, DailyNeed, IncomeAllocation, InsightState, User
 from tests.conftest import API
 
 
@@ -34,24 +34,38 @@ def plan(client, h):
     return client.get(f"{API}/money-plan", headers=h).json()
 
 
-def test_business_account_is_not_free_money_and_not_spending(client, h):
+def test_account_named_as_a_sole_proprietor_is_an_ordinary_personal_account(client, h):
+    """The product is for individuals: nothing is excluded by the account name."""
     acc(client, h)
-    biz = acc(client, h, "ИП Тест", 900_000)
-    assert biz["perimeter"] == "personal" and plan(client, h)["liquid"] == 1_000_000  # nothing changes by itself
-    client.post(f"{API}/transactions", headers=h, json={"accountId": biz["id"], "date": "2026-10-20", "amount": -7000,
-                                                       "merchant": "Поставщик", "kind": "expense"})
-    client.patch(f"{API}/accounts/{biz['id']}", headers=h, json={"perimeter": "business"})
-    assert plan(client, h)["liquid"] == 100_000
-    assert client.get(f"{API}/dashboard/summary?month=2026-10", headers=h).json()["expense"] == 0
+    ip = acc(client, h, "ИП Тест", 900_000)
+    assert "perimeter" not in ip and plan(client, h)["liquid"] == 1_000_000
+    client.patch(f"{API}/accounts/{ip['id']}", headers=h, json={"perimeter": "business"})  # unknown field: ignored
+    assert plan(client, h)["liquid"] == 1_000_000
+    legs = client.post(f"{API}/transfers", headers=h, json={"fromAccountId": ip["id"], "toAccountId": acc(client, h, "Мой", 0)["id"],
+                       "amount": 50_000, "date": "2026-10-20", "requestId": "own-000001"}).json()
+    assert {t["kind"] for t in legs} == {"transfer_own"}
 
 
-def test_business_to_personal_is_an_owner_draw(client, h):
-    me, biz = acc(client, h), acc(client, h, "ИП", 500_000, perimeter="business")
-    legs = client.post(f"{API}/transfers", headers=h, json={"fromAccountId": biz["id"], "toAccountId": me["id"],
-                       "amount": 50_000, "date": "2026-10-20", "requestId": "draw-0001"}).json()
-    assert {t["kind"] for t in legs} == {"owner_draw"}
-    s = client.get(f"{API}/dashboard/summary?month=2026-10", headers=h).json()
-    assert s["income"] == 0 and s["expense"] == 0 and plan(client, h)["liquid"] == 150_000
+def test_need_per_day_and_per_month_convert_by_the_days_of_the_month(client, h):
+    need(client, h, 5000)
+    need(client, h, 62_000, period="month")
+    assert [(n["perDay"], n["perMonth"]) for n in plan(client, h)["needs"]] == [(5000, 155_000), (2000, 62_000)]  # 31 days
+
+
+def test_database_with_the_former_perimeter_column_still_works():
+    """The column was shipped once and is left in place: inserting without it must not fail."""
+    from sqlalchemy import create_engine, text
+
+    from app.core.db import Base
+    from app.core.migrate import add_missing_columns
+    e = create_engine("sqlite://")
+    Base.metadata.create_all(e)
+    with e.begin() as c:
+        c.execute(text("ALTER TABLE accounts ADD COLUMN perimeter VARCHAR(10) DEFAULT 'personal' NOT NULL"))
+    assert add_missing_columns(e) == []
+    with e.begin() as c:
+        c.execute(Account.__table__.insert().values(user_id=1, bank="Kaspi", name="ИП", currency="KZT"))
+        assert c.execute(text("SELECT count(*) FROM accounts")).scalar() == 1
 
 
 def test_needs_reduce_the_limit_and_are_not_deducted_twice(client, h):

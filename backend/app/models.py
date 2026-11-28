@@ -50,8 +50,6 @@ class Account(Base):
     currency: Mapped[str] = mapped_column(String(3), default="KZT")
     balance_minor: Mapped[int] = mapped_column(BigInteger, default=0)
     kind: Mapped[str | None] = mapped_column(String(20), nullable=True)  # current | savings | deposit | cash; NULL = not set
-    # personal | business (sole proprietor): business money is never mixed into personal totals (BR-03)
-    perimeter: Mapped[str] = mapped_column(String(10), default="personal", server_default="personal")
     # availability: money until `frozen_until` is the user's (counts in capital) but not available (not in the liquid
     # pool, Safe-to-Spend or reserve days). frozen_minor = the blocked part; NULL with a date = the whole balance.
     # stable link to bank statements, independent of the display name: "<bank>|*1234" (last digits of the card or

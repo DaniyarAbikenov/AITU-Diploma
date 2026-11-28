@@ -10,10 +10,7 @@ from app.models import Account, AccountCheckpoint, ImportBatch, Transaction
 from app.schemas import AccountOut
 from app.services import fx
 
-USER_KINDS = ("expense", "income", "income_salary", "income_other", "transfer_own", "owner_draw",
-              "transfer_third_party")
-# moves of the user's own money: never income or spending (owner_draw = business account -> personal account)
-OWN_MOVES = ("transfer_own", "owner_draw")
+USER_KINDS = ("expense", "income", "income_salary", "income_other", "transfer_own", "transfer_third_party")
 
 
 def guess_kind(name: str) -> str:
@@ -73,7 +70,6 @@ def account_out(db: Session, a: Account) -> AccountOut:
         then = fx.rate_on(db, a.currency, date.fromisoformat(as_of)) if a.currency != "KZT" else 1.0
         if then is not None:
             out.revaluationKzt = to_major(round(a.balance_minor * (r.rate - then)))
-    out.perimeter = a.perimeter
     out.interestRate, out.earlyWithdrawal, out.numberMask = a.interest_rate, a.early_withdrawal, a.number_mask
     if a.frozen_until is not None:
         out.frozenUntil = a.frozen_until.isoformat()
@@ -104,12 +100,11 @@ def effective_kind(t: Transaction) -> str:
 
 
 def is_cashflow():
-    """SQL condition: the operation is income or spending, not a move between the user's own accounts, not
-    cancelled by the user and not on a business account (perimeters are never mixed silently, BR-03)."""
-    business = select(Account.id).where(Account.perimeter == "business")
-    return and_(Transaction.voided.is_(False), Transaction.account_id.not_in(business),
+    """SQL condition: the operation is income or spending, not a move between the user's own accounts and not
+    cancelled by the user."""
+    return and_(Transaction.voided.is_(False),
                 or_(and_(Transaction.user_kind.is_(None), Transaction.internal.is_(False)),
-                    and_(Transaction.user_kind.is_not(None), Transaction.user_kind.not_in(OWN_MOVES))))
+                    and_(Transaction.user_kind.is_not(None), Transaction.user_kind != "transfer_own")))
 
 
 # Effective values: the user's correction when there is one, otherwise the imported value.

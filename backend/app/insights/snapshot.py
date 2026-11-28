@@ -67,7 +67,7 @@ class Snapshot:
         out = []
         for a in self.accounts:
             v = self.account_views[a.id]
-            if a.perimeter == "personal" and a.confirmed and a.kind and v.balanceKnown and v.currentBalanceKzt is not None:
+            if a.confirmed and a.kind and v.balanceKnown and v.currentBalanceKzt is not None:
                 out.append(a)
         return out
 
@@ -87,18 +87,12 @@ class Snapshot:
         return list(self.db.scalars(select(ImportBatch).where(ImportBatch.user_id == self.user.id)))
 
     @cached_property
-    def all_transactions(self) -> list[Transaction]:
-        """Operations of the last HISTORY_DAYS days on every account (cancelled ones excluded)."""
+    def transactions(self) -> list[Transaction]:
+        """Operations of the last HISTORY_DAYS days (cancelled ones excluded)."""
         start = self.as_of - timedelta(days=HISTORY_DAYS)
         return list(self.db.scalars(select(Transaction).where(
             Transaction.user_id == self.user.id, Transaction.voided.is_(False), acc_svc.eff_date >= start,
             acc_svc.eff_date <= self.as_of)))
-
-    @cached_property
-    def transactions(self) -> list[Transaction]:
-        """Personal perimeter only: business accounts are never mixed into personal numbers (BR-03)."""
-        business = {a.id for a in self.accounts if a.perimeter == "business"}
-        return [t for t in self.all_transactions if t.account_id not in business]
 
     @cached_property
     def obligations(self) -> list[Obligation]:
@@ -139,7 +133,7 @@ class Snapshot:
         return t.user_booked_on or t.booked_on
 
     def is_own_transfer(self, t: Transaction) -> bool:
-        return t.user_kind in acc_svc.OWN_MOVES or (t.user_kind is None and t.internal)
+        return t.user_kind == "transfer_own" or (t.user_kind is None and t.internal)
 
     def cashflow(self, start, end, currency: str = "KZT") -> list[Transaction]:
         """Income and spending operations in [start, end] (own transfers excluded)."""
@@ -194,10 +188,12 @@ class Snapshot:
         active = {f"ob_{o.id}" for o in self.obligations if o.confirmed} | {f"pl_{p.id}" for p in self.planned}
         return n.covered_by in active
 
+    def need_per_day(self, n: DailyNeed, day: date) -> Fraction:
+        """Minor units of one need on a day; a monthly need is spread over the days of its month."""
+        return Fraction(n.amount_minor, 1 if n.period == "day" else calendar.monthrange(day.year, day.month)[1])
+
     def need_on(self, day: date) -> Fraction:
-        """Minor units needed on one day; a monthly need is spread over the days of its month."""
-        n_days = calendar.monthrange(day.year, day.month)[1]
-        return sum((Fraction(n.amount_minor, 1 if n.period == "day" else n_days)
+        return sum((self.need_per_day(n, day)
                     for n in self.needs if not self._covered(n)), Fraction(0))
 
     @cached_property
