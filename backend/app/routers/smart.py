@@ -79,3 +79,51 @@ def hide(body: StateIn, u: User = Depends(current_user), db: Session = Depends(g
 @router.post("/smart/snooze", response_model=Ok)
 def snooze(body: StateIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
     return _state(db, u, body, "snoozed", body.days)
+
+
+class SettingsIn(BaseModel):
+    """thresholds: {key: value | null} (null = back to the default); sensitive: {entry id: on/off}."""
+    thresholds: dict[str, float | None] = {}
+    sensitive: dict[str, bool] = {}
+
+
+def _settings_out(u: User) -> dict:
+    from app.insights import kb as kb_mod
+    from app.insights import settings as th
+
+    base = kb_mod.load()
+    on = (u.insight_settings or {}).get("sensitive_insights", {})
+    return {"thresholds": th.describe(u.insight_settings),
+            "sensitive": [{"id": i, "title": base.entry(i)["title"], "enabled": bool(on.get(i))}
+                          for i in sorted(engine.OPT_IN)]}
+
+
+@router.get("/settings")
+def get_settings(u: User = Depends(current_user)):
+    return _settings_out(u)
+
+
+@router.patch("/settings")
+def patch_settings(body: SettingsIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    from app.insights import settings as th
+
+    cur = dict(u.insight_settings or {})
+    thresholds = dict(cur.get("thresholds", {}))
+    for k, v in body.thresholds.items():
+        spec = th.DEFAULTS.get(k)
+        if spec is None:
+            raise ApiError(422, f"Неизвестная настройка: {k}")
+        if v is None:
+            thresholds.pop(k, None)
+            continue
+        if v < 0 or (spec["unit"] == "share" and v > 1) or (spec["unit"] in ("days", "months") and v > 3650):
+            raise ApiError(422, f"Недопустимое значение для «{spec['label']}»")
+        thresholds[k] = int(v * 100) if spec["unit"] == "money" else (int(v) if spec["unit"] in ("days", "months") else v)
+    sensitive = dict(cur.get("sensitive_insights", {}))
+    for k, v in body.sensitive.items():
+        if k not in engine.OPT_IN:
+            raise ApiError(422, f"Запись {k} не относится к чувствительным")
+        sensitive[k] = v
+    u.insight_settings = {**cur, "thresholds": thresholds, "sensitive_insights": sensitive}
+    db.commit()
+    return _settings_out(u)

@@ -35,5 +35,8 @@ def for_user(settings: dict | None) -> Thresholds:
 
 def describe(settings: dict | None) -> list[dict]:
     custom = (settings or {}).get("thresholds", {})
-    return [{"key": k, "label": d["label"], "unit": d["unit"], "value": custom.get(k, d["value"]),
-             "default": d["value"], "isDefault": k not in custom} for k, d in DEFAULTS.items()]
+    def shown(k: str, v):
+        return v / 100 if DEFAULTS[k]["unit"] == "money" else v
+
+    return [{"key": k, "label": d["label"], "unit": d["unit"], "value": shown(k, custom.get(k, d["value"])),
+             "default": shown(k, d["value"]), "isDefault": k not in custom} for k, d in DEFAULTS.items()]

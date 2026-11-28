@@ -324,3 +324,49 @@ def test_every_implemented_signal_is_covered_here():
     src = inspect.getsource(inspect.getmodule(test_every_implemented_signal_is_covered_here))
     missing = [sid for sid in REGISTRY if sid not in src]
     assert missing == [], missing
+
+
+def test_a001_ceiling_is_not_a_target(w):
+    a = w.account(balance=120_000)
+    w.income(1, 400_000)  # horizon 12 days: ceiling 10 000 a day
+    for i in range(1, 8):
+        w.tx(a, T - timedelta(days=i), -8_000)
+    assert w.sig("A001").triggered is False  # 8 000 < 9 000 (90 % of the ceiling)
+    w.tx(a, T - timedelta(days=1), -10_000)
+    s = w.sig("A001")
+    assert s.triggered and "потолке 10 000 ₸" in s.summary
+
+
+def test_a002_surplus_to_goal_or_reserve(we):
+    we.account(kind="savings", balance=100_000)
+    assert we.sig("A002").ready is False  # no plan without confirmed income
+    we.income(5, 500_000)
+    we.obligation(1, 100_000)  # surplus 100 000, reserve gap 800 000
+    s = we.sig("A002")
+    assert s.triggered and s.values["amount"]["value_minor"] == 100_000 * K and "в резерв" in s.summary
+
+
+def test_a003_tax_from_income(w):
+    from app.models import AmountRule
+
+    a = w.account()
+    w.planned(date(2026, 10, 28), 1, name="Налог ИП")
+    p = w.db.query(PlannedPayment).filter(PlannedPayment.user_id == w.u.id).one()
+    w.db.add(AmountRule(user_id=w.u.id, target_type="planned", target_id=p.id, kind="percent_income",
+                        params={"percent": 3, "base": "income_confirmed"}, expression="3 / 100 * income_confirmed",
+                        valid_from="2026-10"))
+    assert w.sig("A003").triggered is False  # no income this month yet
+    w.tx(a, date(2026, 10, 5), 400_000, cat="income")
+    s = w.sig("A003")
+    assert s.triggered and "Налог ИП" in s.summary and "12 000 ₸" in s.summary
+
+
+def test_a004_debt_income_guard(we):
+    a = we.account()
+    we.obligation(10, 40_000, kind="installment", name="Рассрочка")
+    we.tx(a, date(2026, 9, 5), 3_000, cat="income")
+    s = we.sig("A004")
+    assert s.triggered and "3 000 ₸" in s.summary
+    assert we.sig("R081").ready is False  # the debt-load advice itself stays hidden
+    we.tx(a, date(2026, 9, 6), 297_000, cat="income")
+    assert we.sig("A004").triggered is False

@@ -1,0 +1,308 @@
+{
+ "title": "Дополнение к базе знаний подсказок",
+ "version": "1.1.0",
+ "base_version": "1.0.0",
+ "contains_personal_records": false,
+ "description": "Добавления к исходной базе 1.0.0 (файл исходной базы не меняется). Причины — docs/insights/review-notes.md.",
+ "pilot_config": {},
+ "global_policies": [
+  "Сумма «можно тратить не больше … в день» — безопасный потолок (BR-13), а не цель и не обязательство тратить. Не формулировать её как сумму, которую нужно израсходовать.",
+  "Неиспользованный остаток предлагать только к просмотру перераспределения; сумма берётся из одного расчёта плана (R042/R109), не складывается с другими советами о той же свободной сумме.",
+  "Чувствительные темы (выходные, после зарплаты, ночные покупки, стоимость в рабочих часах, подписки по использованию) показываются только после включения пользователем.",
+  "Пороги подсказок — настройки пользователя со значениями по умолчанию, а не нормы; налоговые ставки и банковские правила не утверждаются."
+ ],
+ "entries": [
+  {
+   "id": "K201",
+   "version": "1.1.0",
+   "title": "Свободная сумма — не обязательство тратить",
+   "topic": "Потолок, а не цель",
+   "module": "cashflow",
+   "entry_type": "financial_insight",
+   "situation": "Темп трат за 7 дней близок к потолку «не больше … в день» или выше него",
+   "interpretation_goal": "Пояснить, что потолок — безопасная граница, а не сумма, которую нужно потратить.",
+   "required_data_description": "см. calculation_reference",
+   "minimum_evidence": "Готовый сигнал с подтверждёнными суммами и датами",
+   "activation": {
+    "all": [
+     {
+      "fact": "signals.A001.ready",
+      "op": "eq",
+      "value": true
+     },
+     {
+      "fact": "signals.A001.triggered",
+      "op": "eq",
+      "value": true
+     },
+     {
+      "fact": "signals.A001.evidenceValid",
+      "op": "eq",
+      "value": true
+     }
+    ]
+   },
+   "calculation_reference": {
+    "id": "A001",
+    "formula": "pace7 = variableSpend(last 7 days) / 7; triggered = safeDaily > 0 AND pace7 >= 0.9 * safeDaily",
+    "status": "implemented_evaluator",
+    "language": "mathematical_pseudocode"
+   },
+   "message": {
+    "base_text": "«Можно тратить не больше … в день» — это безопасный потолок, а не сумма, которую нужно потратить. Всё, что останется, можно направить в цели или резерв.",
+    "evidence_slot": "evidence_summary",
+    "evidence_policy": "Append a server-generated fact sentence with amount/unit, period or date and evidence links. Do not invent values. If essential evidence is absent, do not emit this insight."
+   },
+   "action": {
+    "label": "Посмотреть план месяца",
+    "intent": "review_scenario",
+    "target_module": "monthly_plan",
+    "requires_user_choice": true,
+    "automatic_execution": false
+   },
+   "missing_data": {
+    "behavior": "suppress_this_insight",
+    "fallback_intent": "request_smallest_missing_input",
+    "do_not_substitute_zero": true
+   },
+   "guards": [
+    "Respect scope, currency, asOf and horizon from the evaluated signal.",
+    "Do not judge the user's character or choices; offer a view, not a verdict."
+   ],
+   "delivery": {
+    "audience": "end_user",
+    "surface": "insight_card",
+    "dedup_key_fields": [
+     "rootCauseId",
+     "entityId",
+     "period"
+    ],
+    "criticality": "assigned_by_evaluator_not_llm",
+    "cooldown_policy": "noncritical_7_days_unless_material_change",
+    "rank_policy": "critical_events_then_dependencies_then_user_priorities"
+   },
+   "rollout": "P0",
+   "validation_status": "draft_knowledge_entry_not_empirically_validated",
+   "source": "addendum 1.1.0 (review notes)"
+  },
+  {
+   "id": "K202",
+   "version": "1.1.0",
+   "title": "Неиспользованный остаток месяца → в цель или резерв",
+   "topic": "Профицит после плана",
+   "module": "monthly_plan",
+   "entry_type": "financial_insight",
+   "situation": "План месяца даёт профицит, а цель отстаёт от срока или резерв ниже целевого",
+   "interpretation_goal": "Предложить просмотреть перераспределение профицита в недофинансированную цель или резерв.",
+   "required_data_description": "см. calculation_reference",
+   "minimum_evidence": "Готовый сигнал с подтверждёнными суммами и датами",
+   "activation": {
+    "all": [
+     {
+      "fact": "signals.A002.ready",
+      "op": "eq",
+      "value": true
+     },
+     {
+      "fact": "signals.A002.triggered",
+      "op": "eq",
+      "value": true
+     },
+     {
+      "fact": "signals.A002.evidenceValid",
+      "op": "eq",
+      "value": true
+     }
+    ]
+   },
+   "calculation_reference": {
+    "id": "A002",
+    "formula": "surplus = R042.surplus; need = min(R109 unfunded goal need, R092.gap); amount = min(surplus, need); triggered = amount >= materiality",
+    "status": "implemented_evaluator",
+    "language": "mathematical_pseudocode"
+   },
+   "message": {
+    "base_text": "По плану месяца остаётся свободная сумма. Её можно направить туда, где не хватает: в цель или резерв.",
+    "evidence_slot": "evidence_summary",
+    "evidence_policy": "Append a server-generated fact sentence with amount/unit, period or date and evidence links. Do not invent values. If essential evidence is absent, do not emit this insight."
+   },
+   "action": {
+    "label": "Посмотреть цели",
+    "intent": "review_scenario",
+    "target_module": "goals",
+    "requires_user_choice": true,
+    "automatic_execution": false
+   },
+   "missing_data": {
+    "behavior": "suppress_this_insight",
+    "fallback_intent": "request_smallest_missing_input",
+    "do_not_substitute_zero": true
+   },
+   "guards": [
+    "Respect scope, currency, asOf and horizon from the evaluated signal.",
+    "Do not judge the user's character or choices; offer a view, not a verdict."
+   ],
+   "delivery": {
+    "audience": "end_user",
+    "surface": "insight_card",
+    "dedup_key_fields": [
+     "rootCauseId",
+     "entityId",
+     "period"
+    ],
+    "criticality": "assigned_by_evaluator_not_llm",
+    "cooldown_policy": "noncritical_7_days_unless_material_change",
+    "rank_policy": "critical_events_then_dependencies_then_user_priorities"
+   },
+   "rollout": "P0",
+   "validation_status": "draft_knowledge_entry_not_empirically_validated",
+   "source": "addendum 1.1.0 (review notes)"
+  },
+  {
+   "id": "K203",
+   "version": "1.1.0",
+   "title": "Отложить налог с поступления",
+   "topic": "Налог по правилу пользователя",
+   "module": "monthly_plan",
+   "entry_type": "financial_insight",
+   "situation": "У статьи есть правило «процент от дохода», доход в этом месяце пришёл, а статья не оплачена",
+   "interpretation_goal": "Напомнить отложить сумму по правилу пользователя; процент задаёт пользователь.",
+   "required_data_description": "см. calculation_reference",
+   "minimum_evidence": "Готовый сигнал с подтверждёнными суммами и датами",
+   "activation": {
+    "all": [
+     {
+      "fact": "signals.A003.ready",
+      "op": "eq",
+      "value": true
+     },
+     {
+      "fact": "signals.A003.triggered",
+      "op": "eq",
+      "value": true
+     },
+     {
+      "fact": "signals.A003.evidenceValid",
+      "op": "eq",
+      "value": true
+     }
+    ]
+   },
+   "calculation_reference": {
+    "id": "A003",
+    "formula": "tax = ruleAmount(item, month) for items with kind percent_income; triggered = incomeConfirmed(month) > 0 AND unpaid(item) > 0",
+    "status": "implemented_evaluator",
+    "language": "mathematical_pseudocode"
+   },
+   "message": {
+    "base_text": "В этом месяце пришёл доход, а по вашему правилу с него полагается отложить сумму. Ставку задаёте вы — приложение её не утверждает.",
+    "evidence_slot": "evidence_summary",
+    "evidence_policy": "Append a server-generated fact sentence with amount/unit, period or date and evidence links. Do not invent values. If essential evidence is absent, do not emit this insight."
+   },
+   "action": {
+    "label": "Посмотреть статью",
+    "intent": "review_scenario",
+    "target_module": "planned_events",
+    "requires_user_choice": true,
+    "automatic_execution": false
+   },
+   "missing_data": {
+    "behavior": "suppress_this_insight",
+    "fallback_intent": "request_smallest_missing_input",
+    "do_not_substitute_zero": true
+   },
+   "guards": [
+    "Respect scope, currency, asOf and horizon from the evaluated signal.",
+    "Do not judge the user's character or choices; offer a view, not a verdict."
+   ],
+   "delivery": {
+    "audience": "end_user",
+    "surface": "insight_card",
+    "dedup_key_fields": [
+     "rootCauseId",
+     "entityId",
+     "period"
+    ],
+    "criticality": "assigned_by_evaluator_not_llm",
+    "cooldown_policy": "noncritical_7_days_unless_material_change",
+    "rank_policy": "critical_events_then_dependencies_then_user_priorities"
+   },
+   "rollout": "P0",
+   "validation_status": "draft_knowledge_entry_not_empirically_validated",
+   "source": "addendum 1.1.0 (review notes)"
+  },
+  {
+   "id": "K204",
+   "version": "1.1.0",
+   "title": "Проверьте доход месяца перед расчётом долговой нагрузки",
+   "topic": "Защита КДН от неполных данных",
+   "module": "debts",
+   "entry_type": "data_clarification",
+   "situation": "Есть кредиты, но доход месяца в операциях отсутствует, намного меньше подтверждённого ожидаемого или платежи больше дохода",
+   "interpretation_goal": "Не делать выводов о долговой нагрузке из неполного дохода; попросить проверить данные.",
+   "required_data_description": "см. calculation_reference",
+   "minimum_evidence": "Готовый сигнал с подтверждёнными суммами и датами",
+   "activation": {
+    "all": [
+     {
+      "fact": "signals.A004.ready",
+      "op": "eq",
+      "value": true
+     },
+     {
+      "fact": "signals.A004.triggered",
+      "op": "eq",
+      "value": true
+     },
+     {
+      "fact": "signals.A004.evidenceValid",
+      "op": "eq",
+      "value": true
+     }
+    ]
+   },
+   "calculation_reference": {
+    "id": "A004",
+    "formula": "income = income operations of last month; triggered = debts AND (income = 0 OR income < 0.5 * expected OR payments > income)",
+    "status": "implemented_evaluator",
+    "language": "mathematical_pseudocode"
+   },
+   "message": {
+    "base_text": "Долю дохода на кредиты сейчас не считаем: доход месяца в выписках выглядит неполным.",
+    "evidence_slot": "evidence_summary",
+    "evidence_policy": "Append a server-generated fact sentence with amount/unit, period or date and evidence links. Do not invent values. If essential evidence is absent, do not emit this insight."
+   },
+   "action": {
+    "label": "Проверить доход",
+    "intent": "review_data",
+    "target_module": "transactions",
+    "requires_user_choice": true,
+    "automatic_execution": false
+   },
+   "missing_data": {
+    "behavior": "suppress_this_insight",
+    "fallback_intent": "request_smallest_missing_input",
+    "do_not_substitute_zero": true
+   },
+   "guards": [
+    "Respect scope, currency, asOf and horizon from the evaluated signal.",
+    "Do not judge the user's character or choices; offer a view, not a verdict."
+   ],
+   "delivery": {
+    "audience": "end_user",
+    "surface": "insight_card",
+    "dedup_key_fields": [
+     "rootCauseId",
+     "entityId",
+     "period"
+    ],
+    "criticality": "assigned_by_evaluator_not_llm",
+    "cooldown_policy": "noncritical_7_days_unless_material_change",
+    "rank_policy": "critical_events_then_dependencies_then_user_priorities"
+   },
+   "rollout": "P0",
+   "validation_status": "draft_knowledge_entry_not_empirically_validated",
+   "source": "addendum 1.1.0 (review notes)"
+  }
+ ]
+}

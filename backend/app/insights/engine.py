@@ -62,8 +62,16 @@ def disabled_reason(entry: dict, settings: dict | None = None) -> str | None:
     return None
 
 
+FEATURES: dict = {}  # derived features of the dictionary with an evaluator (none yet: all unknown)
+
+
 def _missing_signals(entry: dict) -> list[str]:
     return sorted(s for s in kb_mod.referenced_signals(entry) if s not in REGISTRY)
+
+
+def _missing_features(entry: dict) -> list[str]:
+    return sorted({c["fact"].split(".", 1)[1] for c in entry["activation"]["all"]
+                   if c["fact"].startswith("features.") and c["fact"].split(".", 1)[1] not in FEATURES})
 
 
 def _fact(path: str, signals: dict[str, Signal], features: dict):
@@ -206,6 +214,8 @@ def catalog(settings: dict | None = None) -> dict:
         reason = disabled_reason(e, settings)
         if reason is None and _missing_signals(e):
             reason = "нужен вычислитель сигналов: " + ", ".join(_missing_signals(e))
+        if reason is None and _missing_features(e):
+            reason = "нужны данные: признаки " + ", ".join(_missing_features(e))
         (disabled if reason else enabled).append({"id": e["id"], "title": e["title"], "module": e["module"],
                                                   "rollout": e["rollout"], "reason": reason})
     return {"version": base.version, "addendumVersion": base.addendum_version, "title": base.title,

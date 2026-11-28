@@ -19,7 +19,8 @@ def _user(client, synthetic=True):
 
 def test_knowledge_base_loads_and_is_valid():
     base = kb.load()
-    assert base.version == "1.0.0" and len(base.entries) >= 200 and len(base.signal_formulas) == 190
+    assert base.version == "1.0.0" and base.addendum_version == "1.1.0"
+    assert len(base.entries) == 204 and len(base.signal_formulas) == 194  # 190 + addendum A001–A004
     raw = json.loads(kb.KB_FILE.read_text(encoding="utf-8"))
     assert kb.validate(raw) == []
     bad = copy.deepcopy(raw)
@@ -74,3 +75,22 @@ def test_cards_with_facts_hide_snooze_and_ownership(client):
     client.post(f"{API}/insights/smart/hide", headers=other, json={"key": k001["key"]})
     assert any(c["entryId"] == "K001" for c in client.get(f"{API}/insights/smart?surface=all", headers=h).json())
     assert client.post(f"{API}/insights/smart/hide", headers=other, json={"key": "K999:x"}).status_code == 404
+
+
+def test_settings_defaults_change_reset_and_opt_in(client):
+    h = _user(client, synthetic=False)
+    st = client.get(f"{API}/insights/settings", headers=h).json()
+    mat = next(t for t in st["thresholds"] if t["key"] == "materialityMinor")
+    assert mat["isDefault"] and mat["value"] == 5000
+    assert {x["id"] for x in st["sensitive"]} == {"K064", "K065", "K066", "K070", "K075", "K076"}
+    r = client.patch(f"{API}/insights/settings", headers=h, json={"thresholds": {"materialityMinor": 2000, "targetReserveMonths": 6},
+                                                                   "sensitive": {"K070": True}}).json()
+    mat = next(t for t in r["thresholds"] if t["key"] == "materialityMinor")
+    assert mat["value"] == 2000 and not mat["isDefault"]
+    assert next(x for x in r["sensitive"] if x["id"] == "K070")["enabled"]
+    cat = client.get(f"{API}/insights/knowledge-base", headers=h).json()
+    assert "K070" not in {d["id"]: d for d in cat["disabled"] if "профиле" in (d["reason"] or "")}
+    r = client.patch(f"{API}/insights/settings", headers=h, json={"thresholds": {"materialityMinor": None}}).json()
+    assert next(t for t in r["thresholds"] if t["key"] == "materialityMinor")["isDefault"]
+    assert client.patch(f"{API}/insights/settings", headers=h, json={"thresholds": {"debtCap": 5}}).status_code == 422
+    assert client.patch(f"{API}/insights/settings", headers=h, json={"sensitive": {"K001": True}}).status_code == 422
