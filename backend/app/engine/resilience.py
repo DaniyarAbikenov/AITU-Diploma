@@ -47,7 +47,10 @@ def compute(ctx: Context, p_shortfall: float, shocks: Shocks | None = None) -> R
     fixed = sum(o.amount for o in ctx.obligations)
     essential = sum(v for c, v in ctx.var_by_category.items() if c in ("food", "transport", "health"))
     window = max(len(ctx.var_all), 1)
-    mandatory = fixed + essential / window * 30 * (1 + shocks.fx / 100 * ctx.fx_weight)
+    if ctx.essential is not None:  # the same base as the reserve and the month plan
+        mandatory = ctx.essential + ctx.living * shocks.fx / 100 * ctx.fx_weight
+    else:  # unknown: estimated from statements
+        mandatory = fixed + essential / window * 30 * (1 + shocks.fx / 100 * ctx.fx_weight)
     runway = ctx.balance / mandatory if mandatory > 0 else 12.0
     dti = debt / income if income > 0 else (1.0 if debt > 0 else 0.0)
 

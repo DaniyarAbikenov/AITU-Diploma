@@ -35,6 +35,11 @@ class User(Base):
     timezone: Mapped[str] = mapped_column(String(40), default="Asia/Almaty", server_default="Asia/Almaty")
     planned_income_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     essential_expenses_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # a typed value is an override when the automatic one existed at that moment, otherwise only a fallback
+    essential_override: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    essential_set_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    planned_income_override: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    planned_income_set_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     work_hours_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # smart insights: opt-in of sensitive entries and thresholds (null = defaults of the knowledge base addendum)
     insight_settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)

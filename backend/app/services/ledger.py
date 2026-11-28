@@ -51,6 +51,8 @@ class Context:
     var_all: np.ndarray = field(default_factory=lambda: np.zeros(0))
     var_by_weekday: dict[int, np.ndarray] = field(default_factory=dict)
     var_by_category: dict[str, float] = field(default_factory=dict)  # tenge over the window
+    essential: float | None = None  # the user's monthly essential expenses (services/basis.py), None while unknown
+    living: float | None = None  # the everyday part of them
 
     @property
     def fx_weight(self) -> float:
@@ -98,6 +100,11 @@ def build_context(db: Session, user: User, as_of: date) -> Context:
         cpi_now=cpi.value if cpi else 9.0,
     )
     _fill_variable_spend(ctx)
+    from app.insights.snapshot import Snapshot
+
+    e = Snapshot(db, user, as_of).essential
+    if e.value_minor is not None:
+        ctx.essential, ctx.living = e.value_minor / 100, e.living_minor / 100
     return ctx
 
 

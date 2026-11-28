@@ -131,7 +131,6 @@ def r030(s: Snapshot) -> Signal:
     """runway = max{k: C_free - essential spending and dated payments up to day k >= 0}, at most 120 days."""
     if s.liquid_minor is None or s.essential_minor is None:
         return not_ready("R030", "нужны остатки и обязательные расходы в профиле")
-    per_day = s.essential_minor / 30
     st = s.sts
     left, k = s.liquid_minor, 0
     pay = {}
@@ -139,7 +138,7 @@ def r030(s: Snapshot) -> Signal:
         pay[p.due] = pay.get(p.due, 0) + p.amount_minor
     while k < 120:
         day = s.as_of + timedelta(days=k)
-        left -= per_day + pay.get(day, 0)
+        left -= s.living_between(day, day) + pay.get(day, 0)
         if left < 0:
             break
         k += 1
@@ -148,7 +147,7 @@ def r030(s: Snapshot) -> Signal:
                   summary=f"Без новых поступлений доступных денег хватит примерно на {k} дн. "
                           f"(обязательные расходы {tenge(s.essential_minor)} в месяц и подтверждённые платежи)."
                   if k < target else None,
-                  entity="liquid", period=s.month, root_cause="runway", impact_minor=int(per_day * max(0, target - k)))
+                  entity="liquid", period=s.month, root_cause="runway", impact_minor=s.living_between(s.as_of + timedelta(days=k), s.as_of + timedelta(days=target - 1)))
 
 
 needs("нужны данные: план повседневного бюджета по категориям", "R026")

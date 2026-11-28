@@ -81,7 +81,7 @@ def r103(s: Snapshot) -> Signal:
 def _affordable(s: Snapshot) -> int | None:
     if s.income_floor_minor is None or s.essential_minor is None:
         return None
-    return s.income_floor_minor - s.essential_minor - s.obligations_month_minor
+    return s.income_floor_minor - s.essential_minor
 
 
 @signal("R104")

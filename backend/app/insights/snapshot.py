@@ -24,6 +24,7 @@ from app.models import (
     User,
 )
 from app.services import accounts as acc_svc
+from app.services import basis as basis_svc
 from app.services import fx
 from app.services import rules as rule_svc
 from app.services import safe_to_spend as sts_svc
@@ -124,6 +125,11 @@ class Snapshot:
         c = rule_svc.compute(self.db, self.user, target_type, target_id, month, self.as_of)
         return None if c is None or c.amount is None else int(c.amount * 100)
 
+    def planned_amount_minor(self, p: PlannedPayment) -> int:
+        from app.routers.planned import out
+
+        return to_minor(out(self.db, p).amount)
+
     def planned_left_minor(self, p: PlannedPayment) -> int:
         from app.routers.planned import out
 
@@ -143,9 +149,24 @@ class Snapshot:
         return [t for t in self.transactions if start <= self.day(t) <= end and t.currency == currency
                 and not self.is_own_transfer(t)]
 
+    @cached_property
+    def essential(self) -> basis_svc.Essential:
+        return basis_svc.essential(self)
+
     @property
     def essential_minor(self) -> int | None:
-        return self.user.essential_expenses_minor
+        """All essential expenses of the month, dated payments included; None while unknown (never zero)."""
+        return self.essential.value_minor
+
+    @property
+    def living_minor(self) -> int | None:
+        """The everyday part of essential expenses: what is not a dated payment."""
+        return self.essential.living_minor
+
+    def living_between(self, start: date, end: date) -> int:
+        """Everyday essential spending on the days start..end inclusive."""
+        return round(sum((basis_svc.living_on(self, self.essential, start + timedelta(days=i))
+                          for i in range((end - start).days + 1)), Fraction(0)))
 
     @cached_property
     def income_floor_minor(self) -> int | None:

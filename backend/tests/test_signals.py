@@ -2,6 +2,7 @@
 unknown values, date boundaries and currency."""
 import uuid
 from datetime import date, timedelta
+from fractions import Fraction
 
 import pytest
 
@@ -12,6 +13,7 @@ from app.insights.snapshot import Snapshot
 from app.models import (
     Account,
     AccountCheckpoint,
+    DailyNeed,
     Goal,
     IncomeSource,
     Obligation,
@@ -31,9 +33,12 @@ class World:
     def __init__(self, db, essential=None):
         self.db = db
         self.u = User(email=f"sig-{uuid.uuid4().hex[:8]}@example.com", name="Тест", password_hash="x",
-                      essential_expenses_minor=None if essential is None else essential * K)
+                      essential_expenses_minor=None)
         db.add(self.u)
         db.flush()
+        if essential is not None:
+            db.add(DailyNeed(user_id=self.u.id, name="Повседневное", amount_minor=essential * K, period="month"))
+            db.flush()
 
     def account(self, name="Gold", kind="current", balance=100_000, currency="KZT", on=None, confirmed=True,
                 frozen_until=None, source="manual"):
@@ -309,7 +314,7 @@ def test_calendar_r181_r182_r183_r185_r188(we):
     we.income(10, 200_000)
     we.obligation(22, 60_000)
     assert we.sig("R181").triggered  # 60 000 due before the 25th, 50 000 available
-    s = we.sig("R182")  # pays on 25 Oct and 10 Nov: after the first 50 000 − 60 000 + 250 000; needs 300 000 × 16 / 30
+    s = we.sig("R182")  # pays on 25 Oct and 10 Nov: after the first 50 000 − 60 000 + 250 000; needs 12 days of 31 and 9 of 30
     assert s.values["afterFirst"]["value_minor"] == 240_000 * K and s.triggered is False
     we.obligation(22, 30_000, name="ЖКУ", kind="utility")
     assert we.sig("R183").triggered  # two payments on one day above the money
@@ -322,9 +327,10 @@ def test_calendar_r181_r182_r183_r185_r188(we):
     extra = 5_000 if weekend.day < 10 else 0
     assert s.values["carryRequired"]["value_minor"] == (90_000 + extra) * K
     paid = 90_000 + (5_000 if weekend.month == 10 and weekend.day < 25 else 0)
-    assert s.values["projectedEnd"]["value_minor"] == (50_000 + 250_000 - paid - 120_000) * K and s.triggered  # 85 000 < 90 000
+    living = round(Fraction(300_000 * K * 12, 31))  # 12 days of October out of 31
+    assert s.values["projectedEnd"]["value_minor"] == (50_000 + 250_000 - paid) * K - living and s.triggered
     we.obligation(28, 20_000, name="Связь", kind="utility")  # after the payout on the 25th, still this month
-    assert we.sig("R188").values["projectedEnd"]["value_minor"] == (50_000 + 250_000 - paid - 20_000 - 120_000) * K
+    assert we.sig("R188").values["projectedEnd"]["value_minor"] == (50_000 + 250_000 - paid - 20_000) * K - living
 
 
 def test_every_implemented_signal_is_named_here():

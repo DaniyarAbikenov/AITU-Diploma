@@ -8,10 +8,10 @@ from app.services.safe_to_spend import monthly_date
 
 
 def _plan(s: Snapshot):
-    """(I_plan cautious, E_plan essential + obligations, savingsPlan) or None when income or essentials are unknown."""
+    """(I_plan cautious, E_plan essential with obligations, savingsPlan) or None when income or essentials are unknown."""
     if s.income_floor_minor is None or s.essential_minor is None:
         return None
-    return s.income_floor_minor, s.essential_minor + s.obligations_month_minor, s.savings_plan_minor
+    return s.income_floor_minor, s.essential_minor, s.savings_plan_minor
 
 
 @signal("R031")
@@ -108,10 +108,10 @@ def r042(s: Snapshot) -> Signal:
 
 @signal("R043")
 def r043(s: Snapshot) -> Signal:
-    """variance = E_actual - E_plannedToDate for variable spending of this month (plan = essentials from the profile
+    """variance = E_actual - E_plannedToDate for variable spending of this month (plan = everyday essentials
     spread over the days; obligations are planned separately)."""
-    if s.essential_minor is None:
-        return not_ready("R043", "нужны обязательные расходы в профиле")
+    if not s.living_minor:
+        return not_ready("R043", "нужны ежедневные потребности или обязательные расходы")
     first = s.as_of.replace(day=1)
     ops = s.cashflow(first, s.as_of)
     if not ops:
@@ -119,9 +119,9 @@ def r043(s: Snapshot) -> Signal:
     fixed = {"housing", "credit"}
     actual = -sum(s.amount(t) for t in ops if s.amount(t) < 0 and t.category_id not in fixed)
     days = (monthly_date(first.year, first.month, 31) - first).days + 1
-    planned = s.essential_minor * s.as_of.day // days
+    planned = s.living_minor * s.as_of.day // days
     variance = actual - planned
-    material = max(s.th.materialityMinor, int(s.essential_minor * s.th.relativeMin))
+    material = max(s.th.materialityMinor, int(s.living_minor * s.th.relativeMin))
     return Signal("R043", ready=True, triggered=variance > material, evidence_valid=True,
                   values={"variance": money(variance), "actual": money(actual), "planned": money(planned)},
                   summary=f"С начала месяца переменные траты {tenge(actual)} при плане к этому дню {tenge(planned)}: "

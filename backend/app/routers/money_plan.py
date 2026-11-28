@@ -3,7 +3,7 @@ import calendar
 from datetime import timedelta
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -15,6 +15,7 @@ from app.core.security import current_user
 from app.insights.snapshot import Snapshot
 from app.models import AllocationRule, DailyNeed, IncomeAllocation, Transaction, User
 from app.schemas import Ok
+from app.services import basis
 from app.services import money_plan as svc
 
 router = APIRouter(tags=["planning"])
@@ -61,12 +62,36 @@ def money_plan(u: User = Depends(current_user), db: Session = Depends(get_db)):
             "days": st.days, "until": st.until.isoformat(), "horizon": st.horizon, "committed": to_major(st.committed_minor),
             "needs": to_major(st.needs_minor), "safeDaily": to_major(st.safe_daily_minor),
             "deficit": to_major(st.deficit_minor)},
+        "everydayKnown": s.essential.everyday_known,
         "needs": [_need(n, s) for n in s.needs], "needToday": to_major(round(s.need_on(s.as_of))) if s.needs else None,
         "suggestedDaily": None if sug is None else to_major(sug),
         "setAside": {"amount": None if aside["amountMinor"] is None else to_major(aside["amountMinor"]),
                      "free": None if aside["freeMinor"] is None else to_major(aside["freeMinor"]),
                      "missing": aside["missing"], "items": _items(aside["items"]), "days": svc.SET_ASIDE_DAYS,
                      "hasTargets": bool(svc.targets(s))}}
+
+
+def _money(minor: int | None):
+    return None if minor is None else to_major(minor)
+
+
+@router.get("/profile/basis")
+def profile_basis(month: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"), u: User = Depends(current_user),
+                  db: Session = Depends(get_db)):
+    """How essential expenses and planned income of a month are computed, item by item."""
+    s = Snapshot(db, u)
+    e, i = basis.essential(s, month), basis.income(s)
+    return {
+        "month": e.month, "days": basis.month_days(e.month), "asOf": s.as_of.isoformat(),
+        "essential": {"value": _money(e.value_minor), "auto": _money(e.auto_minor), "source": e.source,
+                      "everydayKnown": e.everyday_known, "manual": _money(u.essential_expenses_minor),
+                      "manualOn": u.essential_set_on.isoformat() if u.essential_set_on else None,
+                      "items": [{"type": x["type"], "name": x["name"], "amount": to_major(x["amountMinor"]), "note": x["note"],
+                                 "perDay": _money(x.get("perDayMinor")), "days": x.get("days")} for x in e.items]},
+        "income": {"value": _money(i["valueMinor"]), "auto": _money(i["autoMinor"]), "low": _money(i["lowMinor"]),
+                   "high": _money(i["highMinor"]), "source": i["source"], "manual": _money(u.planned_income_minor),
+                   "manualOn": u.planned_income_set_on.isoformat() if u.planned_income_set_on else None,
+                   "items": [{"name": x["name"], "amount": to_major(x["amountMinor"]), "day": x["day"]} for x in i["items"]]}}
 
 
 @router.post("/daily-needs", status_code=201, response_model=Ok)

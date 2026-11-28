@@ -41,7 +41,7 @@ def r182(s: Snapshot) -> Signal:
     before = sum(p.amount_minor for p in s.sts.payments if p.due < d1)
     after_first = s.liquid_minor - before + (i1.amount_min_minor or i1.amount_minor)
     between = sts_svc.compute(d1, after_first, [d2.day], monthly)
-    daily = s.essential_minor * (d2 - d1).days // 30
+    daily = s.living_between(d1, d2 - timedelta(days=1))
     need = between.committed_minor + daily
     gap = max(0, need - after_first)
     return Signal("R182", ready=True, triggered=gap > 0, evidence_valid=True,
@@ -123,9 +123,8 @@ def r188(s: Snapshot) -> Signal:
     first_pay = min(monthly_date(nxt.year, nxt.month, i.day_of_month) for i in s.confirmed_incomes)
     carry = sum(s.obligation_month_minor(o, nkey) for o in s.obligations if o.confirmed
                 and monthly_date(nxt.year, nxt.month, o.day_of_month) < first_pay and (not o.ends_at or o.ends_at >= nkey))
-    carry += s.essential_minor * (first_pay - nxt).days // 30
+    carry += s.living_between(nxt, first_pay - timedelta(days=1))
     month_end = monthly_date(s.as_of.year, s.as_of.month, 31)
-    rest_days = (month_end - s.as_of).days + 1
     # every payment to the month end, also those after the next payout (the spending horizon stops before it)
     this_month_pay = sum(s.obligation_month_minor(o, s.month) for o in s.obligations if o.confirmed
                          and s.as_of <= monthly_date(s.as_of.year, s.as_of.month, o.day_of_month)
@@ -133,7 +132,7 @@ def r188(s: Snapshot) -> Signal:
     this_month_pay += sum(p.amount_minor for p in s.sts_one_off() if p.due <= month_end)
     income_left = sum(i.amount_min_minor or i.amount_minor for i in s.confirmed_incomes
                       if s.as_of < monthly_date(s.as_of.year, s.as_of.month, i.day_of_month) <= month_end)
-    end_free = s.liquid_minor + income_left - this_month_pay - s.essential_minor * rest_days // 30
+    end_free = s.liquid_minor + income_left - this_month_pay - s.living_between(s.as_of, month_end)
     return Signal("R188", ready=True, triggered=end_free < carry, evidence_valid=True,
                   values={"carryRequired": money(carry), "projectedEnd": money(end_free)},
                   summary=f"До первой выплаты {first_pay.strftime('%d.%m.%Y')} в следующем месяце нужно {tenge(carry)}, "

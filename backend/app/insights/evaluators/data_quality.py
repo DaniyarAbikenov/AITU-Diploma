@@ -14,7 +14,7 @@ def r001(s: Snapshot) -> Signal:
         "остатки счетов": bool(s.usable_accounts),
         "подтверждённый доход": bool(s.confirmed_incomes),
         "обязательные платежи": any(o.confirmed for o in s.obligations),
-        "обязательные расходы в профиле": s.user.essential_expenses_minor is not None,
+        "ежедневные потребности или обязательные расходы": s.essential_minor is not None,
     }
     known = sum(fields.values())
     missing = [k for k, v in fields.items() if not v]

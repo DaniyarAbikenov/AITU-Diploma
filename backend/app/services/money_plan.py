@@ -89,7 +89,7 @@ def set_aside(s: Snapshot) -> dict:
     missing = []
     if s.liquid_minor is None:
         missing.append("accounts")
-    if not s.needs:
+    if not s.essential.everyday_known:
         missing.append("needs")
     if not s.confirmed_incomes:
         missing.append("income")
