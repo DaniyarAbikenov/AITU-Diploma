@@ -8,7 +8,7 @@ import { formatDayShort, formatMoneyShort } from "@/lib/format";
 const ReactECharts = lazy(() => import("echarts-for-react"));
 
 /** Chart colors: read the design tokens and convert to rgb through the browser so canvas understands them. */
-export function useChartPalette(scope?: string) {
+export function useChartPalette(scope = ".navigator") {
   const [p, setP] = useState<Record<string, string> | null>(null);
   useEffect(() => {
     const resolve = () => {

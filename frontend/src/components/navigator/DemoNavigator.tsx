@@ -186,6 +186,14 @@ export function DemoNavigator({ onMode }: { onMode: (m: NavMode) => void }) {
       )}
       {tab === "quests" && <QuestsTab {...props} />}
       {tab === "profile" && <ProfileTab {...props} />}
+      {(tab === "debts" || tab === "macro") && (
+        <div className="nav-panel">
+          <p>{ru.demoOnlyLive}</p>
+          <button className="nav-primary" onClick={() => onMode("live")}>
+            {ru.mode.live}
+          </button>
+        </div>
+      )}
     </NavigatorFrame>
   );
 }

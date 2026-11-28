@@ -12,7 +12,9 @@ import { Panel } from "../shared";
 import { Missing } from "./common";
 import { LiveCalendar } from "./LiveCalendar";
 import { LiveForecast } from "./LiveForecast";
+import { LiveDebts } from "./LiveDebts";
 import { LiveGoals } from "./LiveGoals";
+import { LiveMacro } from "./LiveMacro";
 import { LiveHome } from "./LiveHome";
 import { LiveProfile } from "./LiveProfile";
 import { LiveTransactions } from "./LiveTransactions";
@@ -134,6 +136,8 @@ export function LiveNavigator({
       {tab === "transactions" && <LiveTransactions {...props} />}
       {tab === "calendar" && <LiveCalendar {...props} />}
       {tab === "forecast" && <LiveForecast {...props} />}
+      {tab === "debts" && <LiveDebts {...props} />}
+      {tab === "macro" && <LiveMacro {...props} />}
       {tab === "quests" && (
         <Panel>
           <Missing>{ru.live.quests.empty}</Missing>

@@ -1,5 +1,7 @@
 import {
   CalendarDays,
+  CreditCard,
+  Globe2,
   Car,
   Home,
   LayoutDashboard,
@@ -29,6 +31,8 @@ export const tabs = [
   { id: "transactions", name: ru.tabs.transactions, icon: Wallet },
   { id: "calendar", name: ru.tabs.calendar, icon: CalendarDays },
   { id: "forecast", name: ru.tabs.forecast, icon: TrendingUp },
+  { id: "debts", name: ru.tabs.debts, icon: CreditCard },
+  { id: "macro", name: ru.tabs.macro, icon: Globe2 },
   { id: "quests", name: ru.tabs.quests, icon: Leaf },
   { id: "profile", name: ru.tabs.profile, icon: Settings2 },
 ] as const;
