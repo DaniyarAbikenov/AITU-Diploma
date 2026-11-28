@@ -231,3 +231,21 @@ describe("amount rules", () => {
     expect(await d.findByText(/Ошибка в формуле/)).toBeInTheDocument();
   });
 });
+
+describe("insight settings", () => {
+  it("shows defaults and saves a threshold and an opt-in topic", async () => {
+    const { insightSettings } = await import("@/api/mock");
+    await open("Профиль");
+    expect(await screen.findByText("Настройки подсказок")).toBeInTheDocument();
+    expect(screen.getByText("по умолчанию")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/Минимальная заметная сумма/), {
+      target: { value: "2000" },
+    });
+    fireEvent.click(screen.getByLabelText("Стоимость покупки в рабочих часах"));
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить настройки" }));
+    await waitFor(() =>
+      expect(insightSettings.thresholds[0]).toMatchObject({ value: 2000, isDefault: false }),
+    );
+    expect(insightSettings.sensitive[0].enabled).toBe(true);
+  });
+});

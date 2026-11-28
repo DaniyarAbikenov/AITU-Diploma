@@ -42,6 +42,7 @@ export function LiveHome(props: LiveProps) {
             <>
               <p className="nav-safe-amount">{money(sts.safeDaily)}</p>
               <p>{t.safeUntil(formatDay(sts.until))}</p>
+              <p className="nav-small">{t.ceilingNote}</p>
               {sts.deficit > 0 && <p className="nav-warning">{t.deficit(money(sts.deficit))}</p>}
               <div className="nav-safe-line" />
               <div className="nav-formula">

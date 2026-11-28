@@ -142,3 +142,8 @@ export interface SmartCard {
   critical: boolean;
   why: { signal?: string | null; formula: string; inputs: Record<string, unknown>; evidence: string[]; asOf: string; kbVersion: string; entryVersion: string; status?: string };
 }
+
+export interface InsightSettings {
+  thresholds: { key: string; label: string; unit: "money" | "share" | "days" | "months"; value: number; default: number; isDefault: boolean }[];
+  sensitive: { id: string; title: string; enabled: boolean }[];
+}

@@ -2,7 +2,7 @@
 import type {
   Account, BalancePoint, Category, CityPrice, DashboardSummary, DtiPoint, Goal, GoalProjection, ImportReport, IncomeSource,
   Insight, MacroIndicator, MerchantRule, MonthEndForecast, BalanceForecast, Obligation, ObligationsCalendar, PersonalInflation,
-  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction, User, AccountIn, TxKind, TxQuery, Decision, ImportPreview, SmartCard, RuleIn, RuleInfo, RulePreview, Rates, TransactionIn, TransferIn, TransactionPatch, PlannedPayment, PlannedIn, PlannedPatch, SettleIn,
+  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction, User, AccountIn, TxKind, TxQuery, Decision, ImportPreview, SmartCard, InsightSettings, RuleIn, RuleInfo, RulePreview, Rates, TransactionIn, TransferIn, TransactionPatch, PlannedPayment, PlannedIn, PlannedPatch, SettleIn,
 } from "./types";
 
 export const AS_OF = "2026-10-19";
@@ -392,4 +392,20 @@ export function deleteAmountRule(type: string, id: string) {
   const row = type === "obligation" ? db.obligations.find((o) => o.id === id) : db.planned.find((x) => x.id === id);
   if (row) row.rule = null;
   return { ok: true };
+}
+
+export const insightSettings: InsightSettings = {
+  thresholds: [{ key: "materialityMinor", label: "Минимальная заметная сумма, ₸", unit: "money", value: 5000, default: 5000, isDefault: true }],
+  sensitive: [{ id: "K070", title: "Стоимость покупки в рабочих часах", enabled: false }],
+};
+export function patchInsightSettings(p: { thresholds?: Record<string, number | null>; sensitive?: Record<string, boolean> }): InsightSettings {
+  for (const [k, v] of Object.entries(p.thresholds ?? {})) {
+    const t = insightSettings.thresholds.find((x) => x.key === k);
+    if (t) Object.assign(t, v == null ? { value: t.default, isDefault: true } : { value: v, isDefault: false });
+  }
+  for (const [k, v] of Object.entries(p.sensitive ?? {})) {
+    const x = insightSettings.sensitive.find((y) => y.id === k);
+    if (x) x.enabled = v;
+  }
+  return insightSettings;
 }

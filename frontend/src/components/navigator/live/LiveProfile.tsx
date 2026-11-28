@@ -17,6 +17,7 @@ import { Panel } from "../shared";
 import { KztHint, Missing } from "./common";
 import { ObligationsPanel } from "./LivePayments";
 import { PrivacyPanel } from "./PrivacyPanel";
+import { InsightSettingsPanel } from "./InsightSettingsPanel";
 import { FormError } from "./forms";
 import { confirmed, useWrite } from "./hooks";
 import type { LiveProps } from "./types";
@@ -174,6 +175,7 @@ export function LiveProfile({ me, accounts, incomes, obligations, today, notify 
         </details>
       </Panel>
       <ObligationsPanel obligations={obligations} notify={notify} />
+      <InsightSettingsPanel notify={notify} />
       <PrivacyPanel email={me.email} />
     </>
   );
