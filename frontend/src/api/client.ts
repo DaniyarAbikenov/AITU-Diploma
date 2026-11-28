@@ -99,6 +99,7 @@ export const api = {
   runScenario: (shocks: T.Shock[]) => call<T.ScenarioResult>("/scenarios/run", () => m.runScenario(shocks), body("POST", { shocks })),
   savedScenarios: () => call<T.SavedScenario[]>("/scenarios", () => m.db.scenarios),
   saveScenario: (name: string, shocks: T.Shock[]) => call("/scenarios", () => { m.db.scenarios.unshift({ id: "s" + Date.now(), name, shocks, createdAt: m.AS_OF }); return { ok: true }; }, body("POST", { name, shocks })),
+  deleteScenario: (id: string) => call("/scenarios/" + id, () => { m.db.scenarios = m.db.scenarios.filter((x) => x.id !== id); return { ok: true }; }, { method: "DELETE" }),
   macro: () => call<T.MacroIndicator[]>("/macro/overview", m.macro),
   personalInflation: () => call<T.PersonalInflation>("/macro/personal-inflation", m.personalInflation),
   cityPrices: (city: string) => call<T.CityPrice[]>(`/macro/city-prices?city=${encodeURIComponent(city)}`, () => m.cityPrices(city)),

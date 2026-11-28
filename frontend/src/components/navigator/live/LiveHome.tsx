@@ -10,6 +10,7 @@ import { addDays } from "@/lib/safe-to-spend";
 import { money } from "../model";
 import { Panel } from "../shared";
 import { Missing, Preliminary } from "./common";
+import { InsightsPanel, MonthEndPanel } from "./LiveInsights";
 import { TxList } from "./LiveTransactions";
 import type { LiveProps } from "./types";
 
@@ -152,6 +153,10 @@ export function LiveHome(props: LiveProps) {
       {resilience.data && (
         <EstimateNote asOf={resilience.data.as_of} model={resilience.data.model_version} />
       )}
+      <div className="nav-profile-grid">
+        <MonthEndPanel />
+        <InsightsPanel go={go} />
+      </div>
       <Panel
         title={t.recent}
         action={
@@ -165,7 +170,7 @@ export function LiveHome(props: LiveProps) {
         ) : hasOps ? (
           <TxList rows={recent.data!.slice(0, 6)} accounts={props.accounts} />
         ) : (
-          <Missing action={t.importAction} onAction={() => (window.location.href = "/settings")}>
+          <Missing action={t.importAction} onAction={() => go("transactions")}>
             {t.noOperations}
           </Missing>
         )}

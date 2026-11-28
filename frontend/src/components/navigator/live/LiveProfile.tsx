@@ -10,6 +10,7 @@ import { money } from "../model";
 import { Panel } from "../shared";
 import { Missing } from "./common";
 import { ObligationsPanel } from "./LivePayments";
+import { PrivacyPanel } from "./PrivacyPanel";
 import type { LiveProps } from "./types";
 
 const t = ru.live.profile;
@@ -156,6 +157,7 @@ export function LiveProfile({ me, accounts, incomes, obligations, today, notify 
         <NewAccount today={today} notify={notify} />
       </Panel>
       <ObligationsPanel obligations={obligations} notify={notify} />
+      <PrivacyPanel email={me.email} />
     </>
   );
 }
