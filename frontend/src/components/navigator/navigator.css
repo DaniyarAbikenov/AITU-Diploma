@@ -1867,3 +1867,22 @@
   color: inherit;
   text-decoration: underline;
 }
+/* long panel actions wrap under the title on narrow screens instead of widening the page */
+.nav-panel-heading {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.nav-panel-heading > button,
+.nav-panel-heading > .nav-actions {
+  max-width: 100%;
+}
+.nav-panel-heading > button {
+  white-space: normal;
+  text-align: left;
+}
+@media (max-width: 760px) {
+  .nav-panel-heading > button.nav-primary {
+    width: 100%;
+    justify-content: center;
+  }
+}

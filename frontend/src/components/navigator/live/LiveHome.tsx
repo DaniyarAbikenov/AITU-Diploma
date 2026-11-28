@@ -5,7 +5,7 @@ import { q } from "@/api/client";
 import { EstimateNote } from "@/components/kit";
 import { bankName, ru } from "@/i18n/ru";
 import { formatPercent } from "@/lib/format";
-import { formatDay } from "@/lib/navigator-live";
+import { accountNow, formatDay } from "@/lib/navigator-live";
 import { addDays } from "@/lib/safe-to-spend";
 import { money } from "../model";
 import { Panel } from "../shared";
@@ -82,7 +82,7 @@ export function LiveHome(props: LiveProps) {
                     {bankName(a.bank)} · {a.name}{" "}
                     <small className="nav-small">({ru.accountKind[a.kind!]})</small>
                   </span>
-                  <strong>{money(a.balance)}</strong>
+                  <strong>{money(accountNow(a))}</strong>
                 </div>
               ))}
               <div className="nav-account">

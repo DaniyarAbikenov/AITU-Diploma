@@ -199,7 +199,11 @@ function AccountRow({
         <p className="nav-small">
           {a.balanceKnown === false || !a.balanceAsOf
             ? t.balanceUnknown
-            : `${money(a.balance)} · ${t.balanceFrom(a.balanceSource ?? "manual", formatDay(a.balanceAsOf))}`}
+            : `${money(a.balance)} · ${t.balanceFrom(a.balanceSource ?? "manual", formatDay(a.balanceAsOf))}${
+                a.currentBalance != null && a.currentBalance !== a.balance
+                  ? ` · с ручными операциями после этой даты: ${money(a.currentBalance)}`
+                  : ""
+              }`}
         </p>
       </div>
       <label className="nav-field">
