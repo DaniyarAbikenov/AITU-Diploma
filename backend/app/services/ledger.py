@@ -74,7 +74,7 @@ def clamp_day(year: int, month: int, day: int) -> int:
 
 
 def build_context(db: Session, user: User, as_of: date) -> Context:
-    accounts = db.scalars(select(Account).where(Account.user_id == user.id, Account.currency == "KZT")).all()
+    accounts = db.scalars(select(Account).where(Account.user_id == user.id)).all()
     obligations = [
         Ob(o.name, o.kind, o.amount_minor / 100, o.day_of_month, o.ends_at)
         for o in db.scalars(select(Obligation).where(Obligation.user_id == user.id, Obligation.rejected.is_(False)))
@@ -93,12 +93,23 @@ def build_context(db: Session, user: User, as_of: date) -> Context:
     cats = db.scalars(select(Category)).all()
     cpi = db.scalar(select(MacroSeries).where(MacroSeries.code == "cpi").order_by(MacroSeries.as_of.desc()))
     ctx = Context(
-        as_of=as_of, balance=sum(a.balance_minor for a in accounts) / 100, obligations=obligations, incomes=incomes,
+        as_of=as_of, balance=_balance_kzt(db, accounts) / 100, obligations=obligations, incomes=incomes,
         txs=txs, cat_names={c.id: c.name for c in cats}, cat_fx={c.id: c.fx_sensitivity for c in cats},
         cpi_now=cpi.value if cpi else 9.0,
     )
     _fill_variable_spend(ctx)
     return ctx
+
+
+def _balance_kzt(db: Session, accounts: list[Account]) -> int:
+    """All accounts in tenge: foreign-currency balances at the latest official rate (never summed unconverted)."""
+    from app.services import fx
+
+    total = 0
+    for a in accounts:
+        kzt = fx.to_kzt_minor(a.balance_minor, fx.latest(db, a.currency))
+        total += kzt or 0
+    return total
 
 
 def _fill_variable_spend(ctx: Context) -> None:

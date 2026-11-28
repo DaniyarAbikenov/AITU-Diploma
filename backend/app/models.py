@@ -65,6 +65,27 @@ class AccountCheckpoint(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class FxRate(Base):
+    """Latest official rate per currency: tenge for 1 unit (nationalbank.kz). rate_date is the NBK publication date,
+    fetched_at the moment it was received; source 'demo-seed' means no official rate was received yet."""
+    __tablename__ = "fx_rates"
+    currency: Mapped[str] = mapped_column(String(3), primary_key=True)
+    rate: Mapped[float] = mapped_column(Float)
+    rate_date: Mapped[date] = mapped_column(Date)
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    source: Mapped[str] = mapped_column(String(20), default="nbk")
+
+
+class FxRateHistory(Base):
+    """One official rate per currency and publication date, kept for revaluation of foreign-currency accounts."""
+    __tablename__ = "fx_rate_history"
+    __table_args__ = (UniqueConstraint("currency", "rate_date", name="uq_fx_history"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    currency: Mapped[str] = mapped_column(String(3), index=True)
+    rate_date: Mapped[date] = mapped_column(Date)
+    rate: Mapped[float] = mapped_column(Float)
+
+
 class Category(Base):
     """Global categories. `cpi_group` links a category to a CPI series, `fx_sensitivity` is the share of
     the category price that follows the exchange rate (expert estimate, see docs/decisions.md)."""

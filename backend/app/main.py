@@ -53,7 +53,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Financial Resilience API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"], allow_headers=["*"])
 install_error_handlers(app)
-for r in (auth.router, data.router, finance.router, macro.router, planning.router, planned.router):
+for r in (macro.rates_router, auth.router, data.router, finance.router, macro.router, planning.router, planned.router):
     app.include_router(r, prefix=API_PREFIX)
 
 

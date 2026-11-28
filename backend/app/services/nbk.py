@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import MacroSeries
+from app.services import fx
 from app.services.ledger import add_months
 from app.services.macro import parse_nbk_rates
 
@@ -35,6 +36,7 @@ def _store(db: Session, month, value: float) -> None:
 def refresh(db: Session, get: Callable[[str], str] = fetch) -> float:
     """Store the latest USD rate, then backfill past months that are still demo values. Returns the latest rate."""
     published, rates = parse_nbk_rates(get(LATEST_URL))
+    fx.store(db, published, {c: v for c, v in rates.items() if c in fx.SUPPORTED})
     current = published.replace(day=1)
     _store(db, current, rates["USD"])
     done = set(db.scalars(select(MacroSeries.as_of).where(MacroSeries.code == CODE, MacroSeries.source == "nbk")))

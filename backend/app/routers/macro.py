@@ -10,7 +10,8 @@ from app.core.errors import ApiError
 from app.core.security import current_user
 from app.models import MacroSeries, User
 from app.routers.finance import ctx_for
-from app.schemas import CityPriceOut, MacroIndicatorOut, PersonalInflationOut
+from app.schemas import CityPriceOut, MacroIndicatorOut, PersonalInflationOut, RateOut, RatesOut
+from app.services import fx
 from app.services import macro as macro_svc
 
 router = APIRouter(prefix="/macro", tags=["macro"])
@@ -43,3 +44,15 @@ def series(code: str, date_from: date | None = None, date_to: date | None = None
     if not rows:
         raise ApiError(404, "Ряд не найден")
     return [{"date": r.as_of.isoformat(), "value": r.value, "source": r.source} for r in rows]
+
+
+rates_router = APIRouter(tags=["macro"])
+
+
+@rates_router.get("/rates", response_model=RatesOut)
+def rates(db: Session = Depends(get_db)):
+    """Official tenge rates of the National Bank of Kazakhstan: one rate per day, refreshed from nationalbank.kz at
+    startup and every NBK_RATES_INTERVAL seconds. `stale` = the feed was not received recently (last known value)."""
+    return RatesOut(rates=[RateOut(currency=r.currency, rate=r.rate, rateDate=r.rate_date.isoformat(),
+                                   fetchedAt=r.fetched_at.isoformat() if r.fetched_at else None, source=r.source,
+                                   stale=r.stale) for r in fx.all_rates(db)])

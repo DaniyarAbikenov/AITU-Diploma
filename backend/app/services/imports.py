@@ -18,6 +18,7 @@ from app.models import (
     User,
 )
 from app.parsers.base import ParsedStatement
+from app.services import fx
 from app.services.accounts import guess_kind
 
 
@@ -30,7 +31,7 @@ def get_or_create_account(db: Session, user: User, parsed: ParsedStatement) -> A
     acc = db.scalar(select(Account).where(Account.user_id == user.id, Account.bank == parsed.bank,
                                           Account.name == parsed.account_name))
     if acc is None:
-        acc = Account(user_id=user.id, bank=parsed.bank, name=parsed.account_name, currency="KZT",
+        acc = Account(user_id=user.id, bank=parsed.bank, name=parsed.account_name, currency=statement_currency(parsed),
                       balance_minor=parsed.closing_balance_minor or 0, kind=guess_kind(parsed.account_name),
                       confirmed=False)
         db.add(acc)
@@ -38,6 +39,13 @@ def get_or_create_account(db: Session, user: User, parsed: ParsedStatement) -> A
     elif parsed.closing_balance_minor is not None and not _older_than_known(db, acc, parsed):
         acc.balance_minor = parsed.closing_balance_minor  # the newest statement carries the current balance
     return acc
+
+
+def statement_currency(parsed: ParsedStatement) -> str:
+    """The account currency is the currency of most operations of the statement (KZT for an empty one)."""
+    counts = Counter(r.currency for r in parsed.rows)
+    top = counts.most_common(1)[0][0] if counts else "KZT"
+    return top if top in fx.SUPPORTED else "KZT"
 
 
 def record_statement_checkpoint(db: Session, acc: Account, parsed: ParsedStatement) -> None:

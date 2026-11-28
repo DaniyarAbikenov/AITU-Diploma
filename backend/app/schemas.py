@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 Status = Literal["ok", "warn", "risk"]
-Currency = Literal["KZT", "USD"]
+Currency = Literal["KZT", "USD", "EUR", "RUB"]  # account currencies (rates from nationalbank.kz)
 
 
 # ---- auth / profile
@@ -73,6 +73,15 @@ class AccountOut(BaseModel):
     balanceSource: Literal["manual", "statement"] | None = None
     # checkpoint balance plus manual operations dated after it (null when the balance is unknown)
     currentBalance: int | float | None = None
+    # tenge equivalents at the latest official rate (null for an unknown balance or a currency without a rate);
+    # `balance` and `currentBalance` stay in the account currency
+    rate: float | None = None
+    rateDate: str | None = None
+    rateStale: bool = False
+    balanceKzt: int | float | None = None
+    currentBalanceKzt: int | float | None = None
+    # change of the tenge equivalent since the balance date caused by the rate alone (not income or spending)
+    revaluationKzt: int | float | None = None
 
 
 class AccountIn(BaseModel):
@@ -115,8 +124,8 @@ class CategoryOut(BaseModel):
 class TransactionOut(BaseModel):
     id: str
     date: str
-    amount: int | float
-    currency: Currency
+    amount: int | float  # in `currency`, the currency of the operation
+    currency: str
     merchant: str
     categoryId: str
     accountId: str
@@ -183,6 +192,21 @@ class PeriodOut(BaseModel):
     to: str
 
     model_config = {"populate_by_name": True}
+
+
+class RateOut(BaseModel):
+    currency: str
+    rate: float  # tenge per 1 unit
+    rateDate: str  # NBK publication date
+    fetchedAt: str | None = None
+    source: str  # nbk | demo-seed
+    stale: bool
+
+
+class RatesOut(BaseModel):
+    base: Literal["KZT"] = "KZT"
+    source: str = "Национальный банк РК, официальный курс (nationalbank.kz)"
+    rates: list[RateOut]
 
 
 class ImportReportOut(BaseModel):

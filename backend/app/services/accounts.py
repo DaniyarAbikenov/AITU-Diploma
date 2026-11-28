@@ -4,9 +4,10 @@ from datetime import date
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.core.money import to_major
+from app.core.money import to_major, to_minor
 from app.models import Account, AccountCheckpoint, ImportBatch, Transaction
 from app.schemas import AccountOut
+from app.services import fx
 
 USER_KINDS = ("expense", "income", "income_salary", "income_other", "transfer_own", "transfer_third_party")
 
@@ -54,9 +55,19 @@ def account_out(db: Session, a: Account) -> AccountOut:
             Transaction.account_id == a.id, Transaction.source == "manual", Transaction.voided.is_(False),
             eff_date > since)) or 0
         current = to_major(a.balance_minor + int(delta))
-    return AccountOut(id=str(a.id), bank=a.bank, name=a.name, currency=a.currency, balance=to_major(a.balance_minor),
-                      kind=a.kind, confirmed=a.confirmed, balanceKnown=known, balanceAsOf=as_of, balanceSource=source,
-                      currentBalance=current)
+    out = AccountOut(id=str(a.id), bank=a.bank, name=a.name, currency=a.currency, balance=to_major(a.balance_minor),
+                     kind=a.kind, confirmed=a.confirmed, balanceKnown=known, balanceAsOf=as_of, balanceSource=source,
+                     currentBalance=current)
+    r = fx.latest(db, a.currency)
+    if r is not None and a.currency != "KZT":
+        out.rate, out.rateDate, out.rateStale = r.rate, r.rate_date.isoformat(), r.stale
+    if r is not None and known:
+        out.balanceKzt = to_major(round(a.balance_minor * r.rate))
+        out.currentBalanceKzt = to_major(round(to_minor(current) * r.rate))
+        then = fx.rate_on(db, a.currency, date.fromisoformat(as_of)) if a.currency != "KZT" else 1.0
+        if then is not None:
+            out.revaluationKzt = to_major(round(a.balance_minor * (r.rate - then)))
+    return out
 
 
 def effective_kind(t: Transaction) -> str:

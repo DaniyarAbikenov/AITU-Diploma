@@ -157,7 +157,8 @@ def settle(pid: int, body: SettleIn, u: User = Depends(current_user), db: Sessio
         amount = to_minor(body.amount) if body.amount else left
         on = date.fromisoformat(body.date) if body.date else as_of()
         sign = 1 if p.direction == "income" else -1
-        t = Transaction(user_id=u.id, account_id=account_id, booked_on=on, amount_minor=sign * amount, currency="KZT",
+        acc = db.get(Account, account_id)
+        t = Transaction(user_id=u.id, account_id=account_id, booked_on=on, amount_minor=sign * amount, currency=acc.currency,
                         merchant=p.name, category_id=p.category_id or ("income" if sign > 0 else "other"),
                         category_source="user", needs_review=False, internal=False,
                         user_kind="income_other" if sign > 0 else "expense", source="manual",
