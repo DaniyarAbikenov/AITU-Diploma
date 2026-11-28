@@ -11,6 +11,8 @@ const MONEY_KEYS = [
   "balance",
   "txHistory",
   "dti",
+  "smart",
+  "insights",
   "calendar",
 ];
 

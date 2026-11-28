@@ -134,3 +134,11 @@ export interface Goal { id: string; name: string; target: number; saved: number;
 export interface GoalProjection { goalId: string; etaMonth: string; requiredMonthly: number; onTrack: boolean }
 
 export interface MerchantRule { id: string; merchant: string; categoryId: string; kind?: TxKind | null }
+
+/** A smart insight from the knowledge base: fact from computed data, one action that only opens a view. */
+export interface SmartCard {
+  key: string; entryId: string; title: string; text: string; fact: string; module: string; tab: string;
+  actionLabel: string; actionIntent: "review_data" | "review_scenario"; tier: number; tierName: string; rank: number;
+  critical: boolean;
+  why: { signal?: string | null; formula: string; inputs: Record<string, unknown>; evidence: string[]; asOf: string; kbVersion: string; entryVersion: string; status?: string };
+}

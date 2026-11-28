@@ -95,6 +95,9 @@ export const api = {
   deleteAmountRule: (type: "obligation" | "planned", id: string) => call(`/rules/${type}/${id}`, () => m.deleteAmountRule(type, id), { method: "DELETE" }),
   setOverride: (type: "obligation" | "planned", id: string, month: string, amount: number | null) =>
     call(`/overrides/${type}/${id}/${month}`, () => ({ ok: true }), body("PUT", { amount })),
+  smartInsights: (surface: "dashboard" | "calendar" | "all" = "dashboard") => call<T.SmartCard[]>(`/insights/smart?surface=${surface}`, () => m.db.smart),
+  hideSmart: (key: string) => call("/insights/smart/hide", () => { m.db.smart = m.db.smart.filter((c) => c.key !== key); return { ok: true }; }, body("POST", { key })),
+  snoozeSmart: (key: string, days = 3) => call("/insights/smart/snooze", () => ({ ok: true }), body("POST", { key, days })),
   planned: () => call<T.PlannedPayment[]>("/planned-payments", () => m.db.planned),
   addPlanned: (p: T.PlannedIn) => call<T.PlannedPayment>("/planned-payments", () => m.addPlanned(p), body("POST", p)),
   updatePlanned: (id: string, patch: T.PlannedPatch) => call<T.PlannedPayment>("/planned-payments/" + id, () => m.updatePlanned(id, patch), body("PATCH", patch)),
@@ -155,6 +158,8 @@ export const q = {
   transferCandidates: queryOptions({ queryKey: ["transactions", "candidates"], queryFn: api.transferCandidates }),
   ruleVariables: queryOptions({ queryKey: ["ruleVariables"], queryFn: api.ruleVariables, staleTime: Infinity }),
   dtiPayments: (month: string) => queryOptions({ queryKey: ["dti", "payments", month], queryFn: () => api.dtiPayments(month) }),
+  smartInsights: (surface: "dashboard" | "calendar" | "all" = "dashboard") =>
+    queryOptions({ queryKey: ["smart", surface], queryFn: () => api.smartInsights(surface) }),
   planned: queryOptions({ queryKey: ["planned"], queryFn: api.planned }),
   txHistory: (id: string) => queryOptions({ queryKey: ["txHistory", id], queryFn: () => api.txHistory(id) }),
 };

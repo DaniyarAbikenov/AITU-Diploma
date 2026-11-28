@@ -151,4 +151,39 @@ describe("Navigator modes (FR-01)", () => {
     window.history.pushState({}, "", "/");
     db.dti = null;
   });
+  it("shows a smart card with its fact, opens the right tab, explains why and hides it", async () => {
+    db.smart = [
+      {
+        key: "K001:missing_inputs:profile:2026-10",
+        entryId: "K001",
+        title: "Полнота обязательных полей",
+        text: "Для надёжного расчёта свободных денег пока не хватает исходных данных. Заполнено 2 из 4.",
+        fact: "Заполнено 2 из 4.",
+        module: "onboarding",
+        tab: "profile",
+        actionLabel: "Дополнить данные",
+        actionIntent: "review_data",
+        tier: 0,
+        tierName: "Ошибки данных",
+        rank: 0.3,
+        critical: false,
+        why: {
+          signal: "R001",
+          formula: "q = count(known requiredFields) / count(requiredFields)",
+          inputs: { R001: { q: 0.5 } },
+          evidence: [],
+          asOf: "2026-10-19",
+          kbVersion: "1.0.0",
+          entryVersion: "1.0.0",
+        },
+      },
+    ];
+    await signIn();
+    show();
+    expect(await screen.findByText(/Заполнено 2 из 4/)).toBeInTheDocument();
+    expect(screen.getByText(/q = count\(known requiredFields\)/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Скрыть" }));
+    await waitFor(() => expect(screen.queryByText(/Заполнено 2 из 4/)).toBeNull());
+    db.smart = [];
+  });
 });
