@@ -94,10 +94,10 @@ class _Parser:
         self.i += 1
         return t
 
-    def expect(self, kind: str, what: str) -> Tok:
+    def expect(self, kind: str, message: str) -> Tok:
         t = self.take()
         if t.kind != kind:
-            raise FormulaError(f"ожидалось {what}", t.pos)
+            raise FormulaError(message, t.pos)
         return t
 
     def parse(self) -> Decimal:
@@ -157,7 +157,7 @@ class _Parser:
                 raise FormulaError("число записано неверно", t.pos) from None
         if t.kind == "lp":
             v = self.expr()
-            self.expect("rp", "закрывающая скобка «)»")
+            self.expect("rp", "не хватает закрывающей скобки «)»")
             return v
         if t.kind == "name":
             name = t.value.lower()
@@ -169,7 +169,7 @@ class _Parser:
                 while self.peek().kind == "comma":
                     self.take()
                     args.append(self.expr())
-                self.expect("rp", "закрывающая скобка «)»")
+                self.expect("rp", "не хватает закрывающей скобки «)»")
                 if name == "round":
                     if len(args) > 2:
                         raise FormulaError("round принимает число и, по желанию, знаки после запятой", t.pos)
