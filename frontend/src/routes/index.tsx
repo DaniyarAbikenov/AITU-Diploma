@@ -32,7 +32,7 @@ function Landing() {
           </p>
           <div className="mt-10 flex flex-wrap gap-3">
             <Button asChild size="lg" className="bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/90"><Link to="/register">Начать с выписки</Link></Button>
-            <Button asChild size="lg" variant="ghost" className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"><Link to="/login">Смотреть демо</Link></Button>
+            <Button asChild size="lg" variant="ghost" className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"><Link to="/navigator">Financial Life Navigator</Link></Button>
           </div>
         </section>
         <section className="grid gap-6 border-t border-sidebar-border pt-8 md:grid-cols-3">

@@ -1,5 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import * as m from "./mock";
+import { readNavigator, mutateNavigator, resetNavigator } from "./navigator-store";
+import type { NavigatorAction } from "@/lib/navigator";
 import type * as T from "./types";
 import { getToken } from "@/lib/auth";
 
@@ -24,6 +26,9 @@ async function call<R>(path: string, mock: () => R, init?: RequestInit): Promise
 const body = (method: string, b: unknown): RequestInit => ({ method, body: JSON.stringify(b) });
 
 export const api = {
+  navigator: async () => readNavigator(),
+  updateNavigator: async (action: NavigatorAction) => mutateNavigator(action),
+  resetNavigator: async () => resetNavigator(),
   accounts: () => call<T.Account[]>("/accounts", () => m.accounts),
   categories: () => call<T.Category[]>("/categories", () => m.categories),
   transactions: () => call<T.Transaction[]>("/transactions", () => m.db.transactions),
@@ -68,6 +73,7 @@ export const api = {
 };
 
 export const q = {
+  navigator: queryOptions({ queryKey: ["navigator"], queryFn: api.navigator, enabled: typeof window !== "undefined", retry: false }),
   accounts: queryOptions({ queryKey: ["accounts"], queryFn: api.accounts }),
   categories: queryOptions({ queryKey: ["categories"], queryFn: api.categories, staleTime: Infinity }),
   transactions: queryOptions({ queryKey: ["transactions"], queryFn: api.transactions }),
