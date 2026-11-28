@@ -182,3 +182,21 @@ describe("transfers between own accounts", () => {
     expect(legs.map((t) => t.amount).sort((a, b) => a - b)).toEqual([-50000, 50000]);
   });
 });
+
+describe("statement import", () => {
+  it("shows the target account before writing and imports into the chosen one", async () => {
+    const spy = vi.spyOn(api, "importStatement");
+    await open("Операции");
+    fireEvent.click(await screen.findByRole("button", { name: /Импорт выписки/ }));
+    const input = screen.getByLabelText("Выбрать файл") as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(["%PDF"], "kaspi.pdf", { type: "application/pdf" })] },
+    });
+    expect(await screen.findByText("Проверьте перед загрузкой")).toBeInTheDocument();
+    expect(screen.getByText(/подобран по названию/)).toBeInTheDocument();
+    expect(spy).not.toHaveBeenCalled(); // nothing is written by the preview
+    fireEvent.change(screen.getByLabelText("Это счёт"), { target: { value: "new" } });
+    fireEvent.click(screen.getByRole("button", { name: "Загрузить в выбранный счёт" }));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith("Kaspi Bank", expect.any(File), "new"));
+  });
+});

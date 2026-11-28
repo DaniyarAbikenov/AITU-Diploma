@@ -2,41 +2,52 @@ import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { FileUp, Lock } from "lucide-react";
 import { api } from "@/api/client";
-import type { ImportReport } from "@/api/types";
-import { ru } from "@/i18n/ru";
+import type { ImportPreview, ImportReport } from "@/api/types";
+import { bankName, ru } from "@/i18n/ru";
 import { formatDay } from "@/lib/navigator-live";
+import { moneyIn } from "../model";
 import { Panel, Progress } from "../shared";
 import { confirmed } from "./hooks";
 
 const t = ru.imp;
 const BANKS = ["Kaspi Bank", "Halyk Bank", "Freedom Bank"];
 
-/** PDF statement import with progress and a report (parsed, to review, period, warnings). */
+/** PDF statement import: read → preview with the target account (number from the header or the user's choice) →
+ * confirm → report. Nothing is written before the confirmation. */
 export function ImportPanel({ onDone }: { onDone?: (r: ImportReport) => void }) {
   const qc = useQueryClient();
   const [bank, setBank] = useState(BANKS[0]),
     [file, setFile] = useState<File | null>(null),
     [drag, setDrag] = useState(false),
-    [progress, setProgress] = useState(0),
+    [preview, setPreview] = useState<ImportPreview | null>(null),
+    [target, setTarget] = useState("new"),
     [report, setReport] = useState<ImportReport | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const read = useMutation({
+    mutationFn: (f: File) => api.previewStatement(bank, f),
+    onSuccess: (p) => {
+      setPreview(p);
+      setTarget(p.suggestedAccountId ?? "new");
+    },
+  });
   const run = useMutation({
-    mutationFn: (f: File | null) => api.importStatement(bank, f ?? undefined),
+    mutationFn: (v: { f: File | null; target: string }) =>
+      api.importStatement(bank, v.f ?? undefined, v.target),
     onSuccess: (r) => {
       setReport(r);
+      setPreview(null);
       qc.invalidateQueries();
       onDone?.(r);
     },
-    onSettled: () => setProgress(100),
   });
-  const start = (f: File | null) => {
+  const start = (f: File) => {
     run.reset();
+    read.reset();
     setReport(null);
     setFile(f);
-    setProgress(10);
-    const id = setInterval(() => setProgress((v) => (v >= 90 ? 90 : v + 10)), 150);
-    run.mutate(f, { onSettled: () => clearInterval(id) });
+    read.mutate(f);
   };
+  const busy = read.isPending || run.isPending;
   return (
     <Panel title={t.title}>
       <p className="nav-small">{t.text}</p>
@@ -45,7 +56,7 @@ export function ImportPanel({ onDone }: { onDone?: (r: ImportReport) => void }) 
         <select value={bank} onChange={(e) => setBank(e.target.value)}>
           {BANKS.map((b) => (
             <option key={b} value={b}>
-              {ru.banks[b] ?? b}
+              {bankName(b)}
             </option>
           ))}
         </select>
@@ -56,6 +67,7 @@ export function ImportPanel({ onDone }: { onDone?: (r: ImportReport) => void }) 
             <p>
               <strong>{report.parsed ? t.added(report.parsed) : t.none}</strong>
             </p>
+            {report.accountName && <p className="nav-small">{t.linkedTo(report.accountName)}</p>}
             <p className="nav-small">
               {t.review(report.needsReview)} ·{" "}
               {t.period(formatDay(report.period.from), formatDay(report.period.to))}
@@ -69,6 +81,65 @@ export function ImportPanel({ onDone }: { onDone?: (r: ImportReport) => void }) 
             <button className="nav-secondary" onClick={() => setReport(null)}>
               {t.again}
             </button>
+          </div>
+        </div>
+      ) : preview ? (
+        <div className="nav-note">
+          <div>
+            <p>
+              <strong>{t.previewTitle}</strong>
+            </p>
+            <p className="nav-small">
+              {t.inStatement(bankName(preview.bank), preview.accountName, preview.numberMask ?? "")}
+            </p>
+            <p className="nav-small">
+              {t.summary(
+                preview.operations,
+                preview.periodFrom ? formatDay(preview.periodFrom) : "—",
+                preview.periodTo ? formatDay(preview.periodTo) : "—",
+              )}
+            </p>
+            {preview.closingBalance != null && (
+              <p className="nav-small">
+                {t.closing(moneyIn(preview.closingBalance, preview.currency))}
+              </p>
+            )}
+            <label className="nav-field">
+              {t.target}
+              <select value={target} onChange={(e) => setTarget(e.target.value)}>
+                {preview.accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {bankName(a.bank)} · {a.name}
+                    {a.numberMask ? ` ${a.numberMask}` : ""} ({a.currency})
+                  </option>
+                ))}
+                <option value="new">{t.newAccount}</option>
+              </select>
+            </label>
+            <p className={preview.matchedBy === "number" ? "nav-small" : "nav-warning"}>
+              {preview.matchedBy === "number"
+                ? t.byNumber
+                : preview.matchedBy === "name"
+                  ? t.byName
+                  : t.noMatch}
+            </p>
+            {preview.warnings?.map((w) => (
+              <p key={w} className="nav-small nav-danger">
+                {w}
+              </p>
+            ))}
+            <div className="nav-actions">
+              <button
+                className="nav-primary"
+                disabled={busy}
+                onClick={() => run.mutate({ f: file, target })}
+              >
+                {t.confirm}
+              </button>
+              <button className="nav-secondary" disabled={busy} onClick={() => setPreview(null)}>
+                {t.cancel}
+              </button>
+            </div>
           </div>
         </div>
       ) : (
@@ -87,11 +158,11 @@ export function ImportPanel({ onDone }: { onDone?: (r: ImportReport) => void }) 
           }}
         >
           <FileUp size={30} aria-hidden />
-          {run.isPending ? (
+          {busy ? (
             <>
               <p>{file?.name}</p>
-              <Progress value={progress} label="Прогресс разбора" />
-              <p className="nav-small">{progress < 60 ? t.reading : t.categorizing}</p>
+              <Progress value={60} label="Прогресс разбора" />
+              <p className="nav-small">{read.isPending ? t.reading2 : t.categorizing}</p>
             </>
           ) : (
             <>
@@ -118,7 +189,9 @@ export function ImportPanel({ onDone }: { onDone?: (r: ImportReport) => void }) 
               <button
                 className="nav-text-button"
                 type="button"
-                onClick={() => confirmed(t.syntheticConfirm) && start(null)}
+                onClick={() =>
+                  confirmed(t.syntheticConfirm) && run.mutate({ f: null, target: "auto" })
+                }
               >
                 {t.synthetic}
               </button>
@@ -126,9 +199,9 @@ export function ImportPanel({ onDone }: { onDone?: (r: ImportReport) => void }) 
           )}
         </div>
       )}
-      {run.isError && (
+      {(read.isError || run.isError) && (
         <p className="nav-error" role="alert">
-          {run.error.message}
+          {(read.error ?? run.error)?.message}
         </p>
       )}
       <details className="nav-small">

@@ -22,6 +22,8 @@ export interface Account {
   frozenUntil?: string | null; frozenAmount?: number | null; availableBalance?: number | null;
   frozenKzt?: number | null; availableKzt?: number | null;
   interestRate?: number | null; earlyWithdrawal?: "yes" | "no" | "lose_interest" | null;
+  /** Last digits of the card/account number from statements ("*1234"). */
+  numberMask?: string | null;
   kind?: AccountKind | null; confirmed?: boolean;
   /** false: no checkpoint or statement balance, `balance` is a placeholder and must not be shown as 0. */
   balanceKnown?: boolean; balanceAsOf?: string | null; balanceSource?: "manual" | "statement" | null;
@@ -59,7 +61,14 @@ export type PlannedPatch = Partial<PlannedIn> & { cancelled?: boolean };
 export interface SettleIn { transactionId?: string; amount?: number; accountId?: string; date?: string }
 export interface TxQuery { from?: string; to?: string; account?: string; bank?: string; q?: string }
 
-export interface ImportReport { id: string; status: "processing" | "done" | "failed"; parsed: number; needsReview: number; period: { from: string; to: string }; bank: string; warnings?: string[] }
+export interface ImportReport { id: string; status: "processing" | "done" | "failed"; parsed: number; needsReview: number; period: { from: string; to: string }; bank: string; warnings?: string[]; accountId?: string | null; accountName?: string | null }
+export interface ImportPreview {
+  bank: string; accountName: string; numberMask?: string | null; currency: string; periodFrom?: string | null; periodTo?: string | null;
+  operations: number; closingBalance?: number | null; suggestedAccountId?: string | null; matchedBy?: "number" | "name" | null;
+  /** true: the account could not be identified by its number — the user picks one or "new". */
+  needsChoice: boolean; accounts: { id: string; bank: string; name: string; currency: string; numberMask?: string | null }[];
+  warnings?: string[];
+}
 
 export interface Forecasted { as_of: string; model_version: string }
 

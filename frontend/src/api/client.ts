@@ -52,6 +52,7 @@ export const api = {
   deleteTx: (id: string) => call("/transactions/" + id, () => { m.db.transactions = m.db.transactions.filter((x) => x.id !== id); return { ok: true }; }, { method: "DELETE" }),
   voidTx: (id: string, voided: boolean) => call<T.Transaction>(`/transactions/${id}/${voided ? "void" : "restore"}`, () => Object.assign(m.db.transactions.find((x) => x.id === id)!, { voided }), { method: "POST" }),
   txHistory: (id: string) => call<T.TransactionEdit[]>(`/transactions/${id}/history`, () => []),
+  moveOperations: (fromId: string, toId: string) => call(`/accounts/${fromId}/move-operations`, () => { m.db.transactions.forEach((t) => { if (t.accountId === fromId) t.accountId = toId; }); return { ok: true }; }, body("POST", { targetAccountId: toId })),
   createTransfer: (tr: T.TransferIn) => call<T.Transaction[]>("/transfers", () => m.createTransfer(tr), body("POST", tr)),
   transferCandidates: () => call<T.TransferCandidate[]>("/transfers/candidates", () => []),
   linkTransfer: (outId: string, inId: string) => call<T.Transaction[]>("/transfers/link", () => [], body("POST", { outId, inId })),
@@ -68,9 +69,14 @@ export const api = {
   }, body("POST", { merchant, category: categoryId })),
   rules: () => call<T.MerchantRule[]>("/merchant-rules", () => m.db.rules),
   deleteRule: (id: string) => call("/merchant-rules/" + id, () => { m.db.rules = m.db.rules.filter((r) => r.id !== id); return { ok: true }; }, { method: "DELETE" }),
-  importStatement: (bank: string, file?: File) => {
+  previewStatement: (bank: string, file: File) => {
+    const form = new FormData(); form.append("bank", bank); form.append("file", file);
+    return call<T.ImportPreview>("/imports/preview", () => m.fakePreview(bank), { method: "POST", body: form });
+  },
+  /** accountId: "auto" | "new" | an account id chosen in the preview. */
+  importStatement: (bank: string, file?: File, accountId = "auto") => {
     let init = body("POST", { bank });
-    if (file) { const form = new FormData(); form.append("bank", bank); form.append("file", file); init = { method: "POST", body: form }; }
+    if (file) { const form = new FormData(); form.append("bank", bank); form.append("file", file); form.append("accountId", accountId); init = { method: "POST", body: form }; }
     return call<T.ImportReport>("/imports", () => m.fakeImport(bank), init);
   },
   summary: (month: string) => call<T.DashboardSummary>(`/dashboard/summary?month=${month}`, () => m.summary(month)),

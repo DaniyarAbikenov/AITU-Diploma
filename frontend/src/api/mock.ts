@@ -2,7 +2,7 @@
 import type {
   Account, BalancePoint, Category, CityPrice, DashboardSummary, DtiPoint, Goal, GoalProjection, ImportReport, IncomeSource,
   Insight, MacroIndicator, MerchantRule, MonthEndForecast, BalanceForecast, Obligation, ObligationsCalendar, PersonalInflation,
-  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction, User, AccountIn, TxKind, TxQuery, Decision, Rates, TransactionIn, TransferIn, TransactionPatch, PlannedPayment, PlannedIn, PlannedPatch, SettleIn,
+  Resilience, SavedScenario, ScenarioPreset, ScenarioResult, Shock, Transaction, User, AccountIn, TxKind, TxQuery, Decision, ImportPreview, Rates, TransactionIn, TransferIn, TransactionPatch, PlannedPayment, PlannedIn, PlannedPatch, SettleIn,
 } from "./types";
 
 export const AS_OF = "2026-10-19";
@@ -357,4 +357,10 @@ export function createTransfer(tr: TransferIn): Transaction[] {
   ];
   db.transactions.unshift(...legs);
   return legs;
+}
+
+export function fakePreview(bank: string): ImportPreview {
+  return { bank, accountName: "Kaspi Gold", numberMask: null, currency: "KZT", periodFrom: "2026-09-01", periodTo: "2026-09-30", operations: 42,
+    closingBalance: 120000, suggestedAccountId: accounts[0]?.id ?? null, matchedBy: "name", needsChoice: true,
+    accounts: accounts.map((a) => ({ id: a.id, bank: a.bank, name: a.name, currency: a.currency, numberMask: a.numberMask ?? null })) };
 }

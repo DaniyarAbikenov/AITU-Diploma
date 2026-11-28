@@ -17,6 +17,8 @@ import { Panel } from "../shared";
 import { KztHint, Missing } from "./common";
 import { ObligationsPanel } from "./LivePayments";
 import { PrivacyPanel } from "./PrivacyPanel";
+import { FormError } from "./forms";
+import { confirmed, useWrite } from "./hooks";
 import type { LiveProps } from "./types";
 
 const t = ru.live.profile;
@@ -155,7 +157,7 @@ export function LiveProfile({ me, accounts, incomes, obligations, today, notify 
         {accounts.length ? (
           <div className="nav-live-list">
             {accounts.map((a) => (
-              <AccountRow key={a.id} a={a} today={today} notify={notify} />
+              <AccountRow key={a.id} a={a} all={accounts} today={today} notify={notify} />
             ))}
           </div>
         ) : (
@@ -179,10 +181,12 @@ export function LiveProfile({ me, accounts, incomes, obligations, today, notify 
 
 function AccountRow({
   a,
+  all,
   today,
   notify,
 }: {
   a: Account;
+  all: Account[];
   today: string;
   notify: (m: string) => void;
 }) {
@@ -213,6 +217,7 @@ function AccountRow({
       <div>
         <strong>
           {bankName(a.bank)} · {a.name}
+          {a.numberMask ? ` ${a.numberMask}` : ""}
         </strong>{" "}
         {!a.confirmed && <span className="nav-pill warn">{t.notConfirmed}</span>}
         <p className="nav-small">
@@ -290,6 +295,7 @@ function AccountRow({
           {ru.dep.availability}
         </button>
       </div>
+      {all.length > 1 && <MoveOperations a={a} all={all} notify={notify} />}
       {editAvail && (
         <form
           className="nav-form"
@@ -357,6 +363,50 @@ function AccountRow({
         </p>
       )}
     </div>
+  );
+}
+
+/** A statement went to the wrong account: move all its operations (and the statement link) elsewhere. */
+function MoveOperations({
+  a,
+  all,
+  notify,
+}: {
+  a: Account;
+  all: Account[];
+  notify: (m: string) => void;
+}) {
+  const others = all.filter((x) => x.id !== a.id);
+  const [to, setTo] = useState(others[0]?.id ?? "");
+  const move = useWrite(
+    (target: string) => api.moveOperations(a.id, target),
+    () => notify(ru.crud.saved),
+  );
+  const name = (id: string) => others.find((x) => x.id === id)?.name ?? "";
+  return (
+    <details className="nav-small">
+      <summary>{ru.imp.moveTitle}</summary>
+      <div className="nav-actions">
+        <label className="nav-field">
+          {ru.imp.moveTo}
+          <select value={to} onChange={(e) => setTo(e.target.value)}>
+            {others.map((x) => (
+              <option key={x.id} value={x.id}>
+                {bankName(x.bank)} · {x.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          className="nav-secondary"
+          disabled={!to || move.isPending}
+          onClick={() => confirmed(ru.imp.moveConfirm(a.name, name(to))) && move.mutate(to)}
+        >
+          {ru.imp.move}
+        </button>
+      </div>
+      <FormError error={move.error} />
+    </details>
   );
 }
 
